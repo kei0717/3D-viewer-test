@@ -300,26 +300,38 @@ let showGrid3D = false;
 
 // ============================================================
 // 3D用の合成テクスチャキャンバス設定
-// 64x64のテクスチャをそのまま使わず、512x512に拡大してグリッドを描画できるようにします
+// 解像度を1024x1024まで引き上げ、グリッド線を極限まで細くシャープにします。
 // ============================================================
 const tex3DCanvas = document.createElement('canvas');
-tex3DCanvas.width = 512; 
-tex3DCanvas.height = 512;
+tex3DCanvas.width = 1024; 
+tex3DCanvas.height = 1024;
 const tex3DCtx = tex3DCanvas.getContext('2d');
 tex3DCtx.imageSmoothingEnabled = false;
 
-// 3D用グリッドパターン（1回だけ描画してキャッシュしておく）
+// 3D用グリッドパターン（白と黒の極細線をずらして重ね、どんな色の上でも目立つようにする）
 const gridPatternCanvas = document.createElement('canvas');
-gridPatternCanvas.width = 512; 
-gridPatternCanvas.height = 512;
+gridPatternCanvas.width = 1024; 
+gridPatternCanvas.height = 1024;
 const gpCtx = gridPatternCanvas.getContext('2d');
-gpCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
 gpCtx.lineWidth = 1;
+
+// 黒い影の線
+gpCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
 gpCtx.beginPath();
-// 512pxの中に64マス作るため、1マスは8px
-for(let i = 0; i <= 512; i += 8){
-    gpCtx.moveTo(i, 0); gpCtx.lineTo(i, 512);
-    gpCtx.moveTo(0, i); gpCtx.lineTo(512, i);
+for(let i = 0; i <= 1024; i += 16){
+    const pos = i + 1.5;
+    gpCtx.moveTo(pos, 0); gpCtx.lineTo(pos, 1024);
+    gpCtx.moveTo(0, pos); gpCtx.lineTo(1024, pos);
+}
+gpCtx.stroke();
+
+// 白いメインの線
+gpCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+gpCtx.beginPath();
+for(let i = 0; i <= 1024; i += 16){
+    const pos = i + 0.5;
+    gpCtx.moveTo(pos, 0); gpCtx.lineTo(pos, 1024);
+    gpCtx.moveTo(0, pos); gpCtx.lineTo(1024, pos);
 }
 gpCtx.stroke();
 
@@ -351,22 +363,36 @@ function refreshPaintCanvasView(){
   pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
   
   if(showGrid2D) {
-    pctx.lineWidth = 1;
-    pctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    pctx.beginPath();
+    pctx.save();
+    pctx.lineWidth = 0.5;
     const cellSize = paintCanvas.width / TEX_SIZE;
+    
+    // 黒い影の線
+    pctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+    pctx.beginPath();
     for(let i = 0; i <= TEX_SIZE; i++){
-      const pos = i * cellSize;
+      const pos = (i * cellSize) + 0.5;
       pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
       pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
     }
     pctx.stroke();
+
+    // 白いメインの線
+    pctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    pctx.beginPath();
+    for(let i = 0; i <= TEX_SIZE; i++){
+      const pos = (i * cellSize) + 0.0;
+      pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
+      pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
+    }
+    pctx.stroke();
+    pctx.restore();
   }
 
   // --- 3Dモデル用テクスチャの更新 ---
   if(typeof texture !== 'undefined') {
-    tex3DCtx.clearRect(0,0,512,512);
-    tex3DCtx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, 512, 512);
+    tex3DCtx.clearRect(0,0,1024,1024);
+    tex3DCtx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, 1024, 1024);
     
     if(showGrid3D) {
       tex3DCtx.drawImage(gridPatternCanvas, 0, 0);
