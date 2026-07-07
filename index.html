@@ -529,11 +529,8 @@ function facesForCube(cube){
   };
 }
 
-// north/south/east/west（側面）は、外側から見たときにテクスチャが
-// 左右反転して見えてしまっていたため、UVのu座標を左右入れ替えて補正する。
-// up/downはこの反転の対象外（元々正しい向き）。
-const SIDE_FACES = new Set(['north','south','east','west']);
-
+// 全ての面（north/south/east/west/up/down）で、外側から見たときに
+// テクスチャが左右反転して見えてしまっていたため、UVのu座標を左右入れ替えて補正する。
 function buildCubeMesh(cube){
   const faces = facesForCube(cube);
   const positions = [], uvs = [], indices = [];
@@ -547,11 +544,7 @@ function buildCubeMesh(cube){
     positions.push(...v0, ...v1, ...v2, ...v3);
     const u0=uvX/64, u1=(uvX+uvW)/64;
     const vTop=1-uvY/64, vBottom=1-(uvY+uvH)/64;
-    if(SIDE_FACES.has(faceName)){
-      uvs.push(u1,vTop,  u0,vTop,  u0,vBottom,  u1,vBottom);
-    } else {
-      uvs.push(u0,vTop,  u1,vTop,  u1,vBottom,  u0,vBottom);
-    }
+    uvs.push(u1,vTop,  u0,vTop,  u0,vBottom,  u1,vBottom);
     indices.push(vi,vi+1,vi+2,  vi,vi+2,vi+3);
     vi += 4;
   });
