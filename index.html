@@ -132,6 +132,12 @@
   #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--line); border-radius:8px; }
   #uploadInline input{ width:100%; font-size:12px; color:var(--sub); }
 
+  #toggleGridBtn{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text); 
+    padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;
+  }
+  #toggleGridBtn:hover{ border-color:var(--accent); }
+
   /* ---- モバイル対応 ---- */
   @media (max-width: 880px){
     body{ overflow-y:auto; height:auto; }
@@ -225,7 +231,10 @@
     </div>
 
     <div class="block">
-      <span class="label">UVテンプレート (64×64)</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span class="label" style="margin-bottom:0;">UVテンプレート (64×64)</span>
+        <button id="toggleGridBtn">グリッド: OFF</button>
+      </div>
       <div class="canvas-wrap">
         <canvas id="paintCanvas" width="384" height="384"></canvas>
       </div>
@@ -282,12 +291,39 @@ const pctx = paintCanvas.getContext('2d');
 pctx.imageSmoothingEnabled = false;
 
 let currentPart = 'chest';
+let showGrid = false;
+
 function currentCanvas(){ return partCanvases[currentPart]; }
 function currentCtx(){ return currentCanvas().getContext('2d'); }
+
+document.getElementById('toggleGridBtn').onclick = (e) => {
+  showGrid = !showGrid;
+  e.target.textContent = `グリッド: ${showGrid ? 'ON' : 'OFF'}`;
+  e.target.style.borderColor = showGrid ? 'var(--accent)' : 'var(--line)';
+  e.target.style.color = showGrid ? 'var(--accent)' : 'var(--text)';
+  refreshPaintCanvasView();
+};
 
 function refreshPaintCanvasView(){
   pctx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
   pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
+  
+  // グリッドの描画
+  if(showGrid) {
+    pctx.lineWidth = 1;
+    pctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; // ピクセルの邪魔にならない薄い白
+    pctx.beginPath();
+    const cellSize = paintCanvas.width / TEX_SIZE;
+    for(let i = 0; i <= TEX_SIZE; i++){
+      const pos = i * cellSize;
+      // 縦線
+      pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
+      // 横線
+      pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
+    }
+    pctx.stroke();
+  }
+
   if(texture){
     texture.image = currentCanvas();
     texture.needsUpdate = true;
