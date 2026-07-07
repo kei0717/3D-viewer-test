@@ -25,16 +25,24 @@
   h1{ font-size:18px; font-weight:600; letter-spacing:.02em; margin:0 0 16px; color:var(--text); }
   .block{ margin-bottom:20px; }
   .label{ font-size:11px; color:var(--sub); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; display:block; }
-  .current-part{
-    display:flex; align-items:center; justify-content:space-between;
-    background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:4px;
+  
+  /* --- パーツ切り替えタブ --- */
+  .part-tabs {
+    display:flex; gap:4px; background:var(--panel2); padding:4px; border-radius:8px; border:1px solid var(--line);
   }
-  .current-part b{ font-size:15px; }
-  .reselect-btn{
-    background:var(--accent); color:#0d1512; border:none; padding:8px 12px; border-radius:6px;
-    font-size:12px; font-weight:600; cursor:pointer;
+  .part-tab {
+    flex:1; padding:8px 0; background:transparent; border:none; color:var(--sub); 
+    border-radius:6px; font-size:12px; cursor:pointer; font-weight:600; transition:all 0.2s;
   }
-  .reselect-btn:hover{ filter:brightness(1.1); }
+  .part-tab.active { background:var(--panel); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,0.3); }
+  .part-tab:hover:not(.active) { color:var(--text); }
+  
+  .reset-btn{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:6px 12px; border-radius:6px;
+    font-size:11px; cursor:pointer; transition:all 0.2s;
+  }
+  .reset-btn:hover{ border-color:var(--accent2); color:var(--accent2); }
+  
   .row{ display:flex; align-items:center; gap:10px; }
   .swatches{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   .swatch{ width:26px; height:26px; border-radius:5px; border:1px solid var(--line); cursor:pointer; }
@@ -117,13 +125,6 @@
   }
   .modal-card h2{ margin:0 0 8px; font-size:18px; color:var(--text); }
   .modal-card p.sub{ margin:0 0 24px; font-size:13px; }
-  .modal-part-pick{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:24px; }
-  .modal-part-pick button{
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:12px 4px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; transition:all 0.2s;
-  }
-  .modal-part-pick button:hover{ border-color:var(--sub); }
-  .modal-part-pick button.active{ border-color:var(--accent); color:var(--accent); background:rgba(94, 230, 196, 0.1); }
   .choice{
     display:flex; align-items:flex-start; gap:12px; background:var(--panel2);
     border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:10px; cursor:pointer; transition:all 0.2s;
@@ -157,10 +158,8 @@
 
 <div id="startModal">
   <div class="modal-card">
-    <h2 id="modalTitle">新規プロジェクト</h2>
-    <p class="sub">編集する部位と、キャンバスの初期状態を選択してください。</p>
-
-    <div class="modal-part-pick" id="modalPartPick"></div>
+    <h2 id="modalTitle">キャンバスの初期化</h2>
+    <p class="sub">初期状態を選択してください。<br><span style="color:var(--accent2)">※現在の部位の描画内容は破棄されます。</span></p>
 
     <div class="choice" id="choiceTemplate">
       <div class="txt"><b>テンプレートから作成</b><span>各パーツの位置が記載されたガイド付き画像で開始します。</span></div>
@@ -175,6 +174,10 @@
     <div id="uploadInline">
       <input type="file" id="modalFileInput" accept="image/png">
     </div>
+    
+    <div style="margin-top:16px; text-align:right; display:none;" id="cancelModalWrap">
+       <button class="reset-btn" id="cancelModalBtn" style="border:none;">キャンセル</button>
+    </div>
   </div>
 </div>
 
@@ -184,11 +187,12 @@
 
     <div class="block">
       <span class="label">編集中の部位</span>
-      <div class="current-part">
-        <b id="partName">服</b>
-        <button class="reselect-btn" id="reselectBtn">部位を変更</button>
+      <div class="part-tabs" id="partTabs">
+        </div>
+      <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+        <p class="hint">※タブを切り替えても編集内容は自動で保持されます。</p>
+        <button class="reset-btn" id="showModalBtn">キャンバスを初期化</button>
       </div>
-      <p class="hint">※各部位の編集内容は自動的に保持されます。</p>
     </div>
 
     <div class="block">
@@ -292,6 +296,7 @@ pctx.imageSmoothingEnabled = false;
 let currentPart = 'chest';
 let showGrid2D = false;
 let showGrid3D = false;
+let hasStarted = false;
 
 const texture = new THREE.CanvasTexture(currentCanvas());
 texture.magFilter = THREE.NearestFilter;
@@ -640,7 +645,6 @@ function rebuildModel(){
   while(modelGroup.children.length) modelGroup.remove(modelGroup.children[0]);
   const geoData = GEOMETRIES[currentPart];
   geoData.cubes.forEach(cube=> modelGroup.add(buildCubeMesh(cube)));
-  document.getElementById('partName').textContent = geoData.label;
   document.getElementById('partNameBadge').textContent = geoData.label;
   buildCubeListUI();
   centerCameraOnModel();
@@ -678,8 +682,24 @@ document.getElementById('showAllBtn').onclick = ()=> setAllCubeVisibility(()=>tr
 document.getElementById('showInnerOnlyBtn').onclick = ()=> setAllCubeVisibility(c=>!isOuterLayer(c));
 document.getElementById('showOuterOnlyBtn').onclick = ()=> setAllCubeVisibility(c=>isOuterLayer(c));
 
+// ============================================================
+// Part Switching via Tabs
+// ============================================================
+function renderPartTabs() {
+  const container = document.getElementById('partTabs');
+  container.innerHTML = '';
+  PART_KEYS.forEach(key => {
+    const btn = document.createElement('button');
+    btn.className = `part-tab ${key === currentPart ? 'active' : ''}`;
+    btn.textContent = GEOMETRIES[key].label;
+    btn.onclick = () => switchToPart(key);
+    container.appendChild(btn);
+  });
+}
+
 function switchToPart(key){
   currentPart = key;
+  renderPartTabs(); // Update active tab
   refreshPaintCanvasView();
   rebuildModel();
   updateUndoRedoButtons();
@@ -819,34 +839,15 @@ document.getElementById('downloadBtn').onclick = ()=>{
 };
 
 // ============================================================
-// Initialization Modal
+// Initialization Modal & Startup
 // ============================================================
 const startModal = document.getElementById('startModal');
 const uploadInline = document.getElementById('uploadInline');
-const modalPartPick = document.getElementById('modalPartPick');
-let modalSelectedPart = 'chest';
-let hasStarted = false;
-
-function renderModalPartPick(){
-  modalPartPick.innerHTML = '';
-  PART_KEYS.forEach(key=>{
-    const b = document.createElement('button');
-    b.textContent = GEOMETRIES[key].label;
-    b.className = key===modalSelectedPart ? 'active' : '';
-    b.onclick = ()=>{
-      modalSelectedPart = key;
-      renderModalPartPick();
-    };
-    modalPartPick.appendChild(b);
-  });
-}
 const choiceButtons = [
   document.getElementById('choiceTemplate'),
   document.getElementById('choiceBlank'),
   document.getElementById('choiceUpload')
 ];
-modalPartPick.innerHTML = '<p style="font-size:12px;color:var(--sub);grid-column:1/-1;margin:0;">設定データを読み込み中...</p>';
-choiceButtons.forEach(el=> el.style.pointerEvents = 'none');
 
 fetch(DATA_BASE + 'geometries.json')
   .then(res=>{
@@ -855,40 +856,43 @@ fetch(DATA_BASE + 'geometries.json')
   })
   .then(data=>{
     GEOMETRIES = data;
+    renderPartTabs(); // 生成
     choiceButtons.forEach(el=> el.style.pointerEvents = '');
-    renderModalPartPick();
   })
   .catch(err=>{
-    modalPartPick.innerHTML =
-      '<p style="font-size:12px;color:var(--accent2);grid-column:1/-1;margin:0;">' +
-      '設定ファイルの読み込みに失敗しました。<br>' +
-      'data/geometries.json が存在するか確認してください。' +
-      '</p>';
+    document.getElementById('modalTitle').textContent = 'エラーが発生しました';
+    document.querySelector('.modal-card p.sub').innerHTML = 
+      '<span style="color:var(--accent2)">設定ファイルの読み込みに失敗しました。<br>data/geometries.json が存在するか確認してください。</span>';
     console.error(err);
   });
 
-document.getElementById('reselectBtn').onclick = ()=>{
-  modalSelectedPart = currentPart;
-  renderModalPartPick();
+document.getElementById('showModalBtn').onclick = ()=>{
   uploadInline.style.display = 'none';
+  document.getElementById('modalTitle').textContent = `キャンバスの初期化 (${GEOMETRIES[currentPart].label})`;
+  document.getElementById('cancelModalWrap').style.display = 'block';
   startModal.style.display = 'flex';
+};
+document.getElementById('cancelModalBtn').onclick = ()=>{
+  startModal.style.display = 'none';
 };
 
 function closeModalAfterApply(){
   startModal.style.display = 'none';
-  currentPart = modalSelectedPart;
-  switchToPart(currentPart);
   if(!hasStarted){
     hasStarted = true;
+    switchToPart(currentPart);
     resize();
     animate();
+  } else {
+    refreshPaintCanvasView();
+    updateUndoRedoButtons();
   }
 }
 document.getElementById('choiceTemplate').onclick = ()=>{
-  loadImageIntoPart(modalSelectedPart, TEMPLATES[modalSelectedPart], closeModalAfterApply);
+  loadImageIntoPart(currentPart, TEMPLATES[currentPart], closeModalAfterApply);
 };
 document.getElementById('choiceBlank').onclick = ()=>{
-  clearPart(modalSelectedPart);
+  clearPart(currentPart);
   closeModalAfterApply();
 };
 document.getElementById('choiceUpload').onclick = ()=>{
@@ -898,7 +902,7 @@ document.getElementById('modalFileInput').addEventListener('change', e=>{
   const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = ev => loadImageIntoPart(modalSelectedPart, ev.target.result, closeModalAfterApply);
+  reader.onload = ev => loadImageIntoPart(currentPart, ev.target.result, closeModalAfterApply);
   reader.readAsDataURL(file);
 });
 </script>
