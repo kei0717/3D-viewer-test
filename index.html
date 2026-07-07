@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>UVペイント × リアルタイム3Dプレビュー（サンプル）</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#15171c; --panel:#1c1f26; --panel2:#22262f; --line:#2c313c;
+    --text:#e8eaef; --sub:#8a90a0; --accent:#5ee6c4; --accent2:#ff8a5b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',-apple-system,'Hiragino Kaku Gothic ProN',sans-serif;
+    height:100vh; overflow:hidden;
+  }
+  .app{ display:flex; height:100vh; }
+  .side{
+    width:440px; flex-shrink:0; background:var(--panel);
+    border-right:1px solid var(--line); padding:18px; overflow-y:auto;
+  }
+  h1{ font-size:15px; letter-spacing:.02em; margin:0 0 2px; color:var(--text); }
+  .sub{ font-size:12px; color:var(--sub); margin:0 0 18px; }
+  .block{ margin-bottom:20px; }
+  .label{ font-size:11px; color:var(--sub); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; display:block; }
+  .current-part{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:8px;
+  }
+  .current-part b{ font-size:15px; }
+  .reselect-btn{
+    background:var(--accent); color:#0d1512; border:none; padding:10px 14px; border-radius:6px;
+    font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .row{ display:flex; align-items:center; gap:10px; }
+  .swatches{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .swatch{ width:26px; height:26px; border-radius:5px; border:1px solid var(--line); cursor:pointer; }
+  #colorPicker{ width:44px; height:38px; border:none; background:none; padding:0; cursor:pointer; }
+  .tool-toggle{
+    display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:1;
+  }
+  .tool-toggle button{
+    flex:1; padding:11px 0; background:var(--panel2); color:var(--sub); border:none; cursor:pointer; font-size:13px;
+    border-right:1px solid var(--line);
+  }
+  .tool-toggle button:last-child{ border-right:none; }
+  .tool-toggle button.pen.active{ background:var(--accent); color:#0d1512; }
+  .tool-toggle button.eraser.active{ background:var(--accent2); color:#2a1305; }
+  .undo-redo{ display:flex; gap:8px; }
+  .undo-redo button{
+    flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:10px 0; border-radius:6px; font-size:13px; cursor:pointer;
+  }
+  .undo-redo button:disabled{ color:#4a5162; cursor:default; }
+  .undo-redo button:not(:disabled):hover{ border-color:var(--accent); }
+  .quick-actions{ display:flex; gap:6px; margin-bottom:8px; }
+  .quick-actions button{
+    flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--sub);
+    padding:8px 4px; border-radius:6px; font-size:11px; cursor:pointer;
+  }
+  .quick-actions button:hover{ color:var(--text); }
+  .cube-list{ display:flex; flex-direction:column; gap:6px; }
+  .cube-item{
+    display:flex; align-items:center; gap:8px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:12px;
+  }
+  .cube-item input{ cursor:pointer; width:18px; height:18px; }
+  .layer-tag{
+    font-size:10px; padding:2px 6px; border-radius:10px; background:#2c313c; color:var(--sub); margin-left:auto;
+  }
+  .layer-tag.outer{ color:var(--accent2); }
+  .layer-tag.inner{ color:var(--accent); }
+  .canvas-wrap{
+    background:#0d0e12; border:1px solid var(--line); border-radius:8px; padding:10px;
+    display:flex; justify-content:center;
+  }
+  #paintCanvas{
+    cursor:crosshair; border-radius:2px; touch-action:none;
+    max-width:100%; height:auto;
+    background-image:
+      linear-gradient(45deg, #3a3f4b 25%, transparent 25%),
+      linear-gradient(-45deg, #3a3f4b 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #3a3f4b 75%),
+      linear-gradient(-45deg, transparent 75%, #3a3f4b 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color:#2c313c;
+  }
+  .hint{ font-size:11px; color:var(--sub); margin-top:8px; line-height:1.5; }
+  .debug-btn{
+    width:100%; background:var(--panel2); border:1px dashed var(--line); color:var(--sub);
+    padding:10px; border-radius:6px; font-size:12px; cursor:pointer;
+  }
+  .debug-btn:hover{ color:var(--text); border-color:var(--accent2); }
+  .main{ flex:1; position:relative; min-width:0; }
+  #viewer{ width:100%; height:100%; display:block; touch-action:none; }
+  .badge{
+    position:absolute; top:16px; left:16px; background:rgba(28,31,38,.85);
+    border:1px solid var(--line); border-radius:6px; padding:8px 12px; font-size:12px; color:var(--sub);
+    max-width:280px;
+  }
+  .badge b{ color:var(--text); }
+  .dl-block{ margin-top:4px; }
+  .dl{
+    width:100%; background:var(--accent); color:#0d1512;
+    border:none; padding:12px 16px; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .dl:hover{ filter:brightness(1.08); }
+
+  #startModal{
+    position:fixed; inset:0; background:rgba(10,11,14,.88); z-index:50;
+    display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;
+  }
+  .modal-card{
+    width:480px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px;
+  }
+  .modal-card h2{ margin:0 0 6px; font-size:16px; }
+  .modal-card p.sub{ margin-bottom:16px; }
+  .modal-part-pick{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:20px; }
+  .modal-part-pick button{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:12px 4px; border-radius:6px; font-size:13px; cursor:pointer;
+  }
+  .modal-part-pick button.active{ border-color:var(--accent); color:var(--accent); background:#1a2b28; }
+  .choice{
+    display:flex; align-items:flex-start; gap:12px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:10px; cursor:pointer;
+  }
+  .choice:hover{ border-color:var(--accent); }
+  .choice .icon{ font-size:20px; line-height:1; }
+  .choice .txt b{ display:block; font-size:13px; margin-bottom:2px; }
+  .choice .txt span{ font-size:12px; color:var(--sub); }
+  #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--line); border-radius:8px; }
+  #uploadInline input{ width:100%; font-size:12px; color:var(--sub); }
+
+  /* ---- モバイル対応 ---- */
+  @media (max-width: 880px){
+    body{ overflow-y:auto; height:auto; }
+    .app{ flex-direction:column; height:auto; min-height:100vh; }
+    .side{ width:100%; max-height:none; border-right:none; border-bottom:1px solid var(--line); order:2; }
+    .main{ height:56vh; min-height:320px; order:1; }
+    .badge{ font-size:11px; max-width:60%; }
+    .modal-card{ padding:18px; }
+    .swatch{ width:30px; height:30px; }
+    .tool-toggle button{ padding:13px 0; font-size:14px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="startModal">
+  <div class="modal-card">
+    <h2 id="modalTitle">部位とテクスチャの元をえらんでください</h2>
+    <p class="sub">まず部位を選び、そのあと初期状態（テンプレート／透明／既存画像）を選びます。</p>
+
+    <div class="modal-part-pick" id="modalPartPick"></div>
+
+    <div class="choice" id="choiceTemplate">
+      <div class="icon">🎨</div>
+      <div class="txt"><b>テンプレート画像を使う</b><span>ガイド付きテンプレート（IN/OUT・R/L表示）から開始</span></div>
+    </div>
+    <div class="choice" id="choiceBlank">
+      <div class="icon">⬜</div>
+      <div class="txt"><b>完全透明から始める</b><span>まっさらな状態（すべて透明）から自分で塗っていく</span></div>
+    </div>
+    <div class="choice" id="choiceUpload">
+      <div class="icon">📂</div>
+      <div class="txt"><b>既存の画像を編集する</b><span>手持ちのPNG（64×64）を読み込んで続きから編集</span></div>
+    </div>
+
+    <div id="uploadInline">
+      <input type="file" id="modalFileInput" accept="image/png">
+      <p class="hint" style="margin-top:8px;">選んだ部位にこの画像を読み込みます。</p>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <div class="side">
+    <h1>UVペイント → 3Dプレビュー</h1>
+    <p class="sub">サンプル / clothing.geo.json ベース</p>
+
+    <div class="block">
+      <span class="label">現在の部位</span>
+      <div class="current-part">
+        <b id="partName">服</b>
+        <button class="reselect-btn" id="reselectBtn">部位を選びなおす</button>
+      </div>
+      <p class="hint">部位の切り替えはこのボタンからのみ行えます（描いた内容は部位ごとに保存されています）。</p>
+    </div>
+
+    <div class="block">
+      <span class="label">元に戻す／やり直す</span>
+      <div class="undo-redo">
+        <button id="undoBtn" disabled>↶ 元に戻す</button>
+        <button id="redoBtn" disabled>↷ やり直す</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <span class="label">パーツの表示・非表示（裏に塗りたい時は隠す）</span>
+      <div class="quick-actions">
+        <button id="showAllBtn">すべて表示</button>
+        <button id="showInnerOnlyBtn">内側だけ</button>
+        <button id="showOuterOnlyBtn">外側だけ</button>
+      </div>
+      <div class="cube-list" id="cubeList"></div>
+    </div>
+
+    <div class="block">
+      <span class="label">ツール</span>
+      <div class="row">
+        <div class="tool-toggle">
+          <button class="pen active" id="penBtn">ペン</button>
+          <button class="eraser" id="eraserBtn">消しゴム</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input type="color" id="colorPicker" value="#5ee6c4">
+        <input type="range" id="brushSize" min="1" max="6" value="1" style="flex:1;">
+        <span id="brushLabel" style="font-size:12px; color:var(--sub);">1px</span>
+      </div>
+      <div class="swatches" id="swatches"></div>
+    </div>
+
+    <div class="block">
+      <span class="label">UVテンプレート (64×64)</span>
+      <div class="canvas-wrap">
+        <canvas id="paintCanvas" width="384" height="384"></canvas>
+      </div>
+      <p class="hint">グレーの市松模様は透明を表す表示上のガイドで、書き出したPNGには含まれません。3Dモデルの上をタップ／クリック＆ドラッグしても直接塗れます（モデルの無い場所からドラッグを始めると回転になります）。</p>
+    </div>
+
+    <div class="block">
+      <span class="label">向きが合っているか確認したい時</span>
+      <button class="debug-btn" id="debugBtn">面ごとに色分け＆N/S/E/W/U/Dを表示（デバッグ）</button>
+    </div>
+
+    <div class="block dl-block">
+      <button class="dl" id="downloadBtn">この部位をPNGで書き出し</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="viewer"></div>
+    <div class="badge">部位: <b id="partNameBadge">服</b> ／ 空いている場所からドラッグ・スワイプで回転、下のグリッドの矢印が正面方向</div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// ジオメトリ定義とテンプレート画像は、このHTMLと同じフォルダの
+// data/ 以下からすべて読み込みます（このファイル自身には埋め込みません）。
+//   ./data/geometries.json          … 各部位のキューブ／UV定義
+//   ./data/templates/head.png 等    … 部位ごとのテンプレート画像
+// ※ file:// で直接ダブルクリックして開くと、ブラウザの制限で
+//   fetch()やPNG書き出し(toDataURL)がブロックされることがあります。
+//   その場合はこのフォルダで簡易サーバーを起動してください。
+//   例: このフォルダで `python -m http.server` を実行し、
+//       表示される http://localhost:8000/ をブラウザで開く。
+// ============================================================
+const DATA_BASE = './data/';
+let GEOMETRIES = null;
+
+const TEMPLATES = {
+  head:  DATA_BASE + 'templates/head.png',
+  chest: DATA_BASE + 'templates/chest.png',
+  legs:  DATA_BASE + 'templates/legs.png',
+  feet:  DATA_BASE + 'templates/feet.png'
+};
+
+function isOuterLayer(cube){
+  const f = cube.uv.north || cube.uv.up;
+  return f[1] >= 32;
+}
+
+const PART_KEYS = ['head','chest','legs','feet'];
+const TEX_SIZE = 64;
+const MAX_HISTORY = 40;
+
+const partCanvases = {};
+const undoStacks = {};
+const redoStacks = {};
+PART_KEYS.forEach(k=>{
+  const c = document.createElement('canvas');
+  c.width = TEX_SIZE; c.height = TEX_SIZE;
+  partCanvases[k] = c;
+  undoStacks[k] = [];
+  redoStacks[k] = [];
+});
+
+const paintCanvas = document.getElementById('paintCanvas');
+const pctx = paintCanvas.getContext('2d');
+pctx.imageSmoothingEnabled = false;
+
+let currentPart = 'chest';
+function currentCanvas(){ return partCanvases[currentPart]; }
+function currentCtx(){ return currentCanvas().getContext('2d'); }
+
+function refreshPaintCanvasView(){
+  pctx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
+  pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
+  if(texture){
+    texture.image = currentCanvas();
+    texture.needsUpdate = true;
+  }
+}
+
+function loadImageIntoPart(partKey, src, cb){
+  const img = new Image();
+  img.onload = ()=>{
+    const ctx = partCanvases[partKey].getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0,0,TEX_SIZE,TEX_SIZE);
+    ctx.drawImage(img, 0, 0, TEX_SIZE, TEX_SIZE);
+    undoStacks[partKey] = []; redoStacks[partKey] = [];
+    if(cb) cb();
+  };
+  img.src = src;
+}
+function clearPart(partKey){
+  partCanvases[partKey].getContext('2d').clearRect(0,0,TEX_SIZE,TEX_SIZE);
+  undoStacks[partKey] = []; redoStacks[partKey] = [];
+}
+
+// ============================================================
+// 元に戻す／やり直す
+// ============================================================
+function updateUndoRedoButtons(){
+  document.getElementById('undoBtn').disabled = undoStacks[currentPart].length===0;
+  document.getElementById('redoBtn').disabled = redoStacks[currentPart].length===0;
+}
+function snapshotBeforeStroke(){
+  const data = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  const stack = undoStacks[currentPart];
+  stack.push(data);
+  if(stack.length>MAX_HISTORY) stack.shift();
+  redoStacks[currentPart] = [];
+  updateUndoRedoButtons();
+}
+function undo(){
+  const stack = undoStacks[currentPart];
+  if(stack.length===0) return;
+  const current = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  redoStacks[currentPart].push(current);
+  currentCtx().putImageData(stack.pop(),0,0);
+  refreshPaintCanvasView();
+  updateUndoRedoButtons();
+}
+function redo(){
+  const stack = redoStacks[currentPart];
+  if(stack.length===0) return;
+  const current = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  undoStacks[currentPart].push(current);
+  currentCtx().putImageData(stack.pop(),0,0);
+  refreshPaintCanvasView();
+  updateUndoRedoButtons();
+}
+document.getElementById('undoBtn').onclick = undo;
+document.getElementById('redoBtn').onclick = redo;
+window.addEventListener('keydown', e=>{
+  if(!(e.ctrlKey||e.metaKey)) return;
+  if(e.key==='z' && !e.shiftKey){ e.preventDefault(); undo(); }
+  else if(e.key==='y' || (e.key==='z' && e.shiftKey)){ e.preventDefault(); redo(); }
+});
+
+// ============================================================
+// ペイントツール
+// ============================================================
+let tool = 'pen';
+let brushColor = '#5ee6c4';
+let brushSize = 1;
+let painting = false;
+
+function paintAt(px, py){
+  if(px<0||py<0||px>=TEX_SIZE||py>=TEX_SIZE) return;
+  const ctx = currentCtx();
+  const size = brushSize;
+  const half = Math.floor(size/2);
+  if(tool === 'eraser'){
+    ctx.clearRect(px-half, py-half, size, size);
+  } else {
+    ctx.fillStyle = brushColor;
+    ctx.fillRect(px-half, py-half, size, size);
+  }
+  refreshPaintCanvasView();
+}
+function canvasEventToPixel(e){
+  const rect = paintCanvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) / (rect.width / TEX_SIZE));
+  const y = Math.floor((e.clientY - rect.top) / (rect.height / TEX_SIZE));
+  return [x,y];
+}
+paintCanvas.addEventListener('mousedown', e=>{
+  painting=true; snapshotBeforeStroke();
+  const [x,y]=canvasEventToPixel(e); paintAt(x,y);
+});
+window.addEventListener('mouseup', ()=> painting=false);
+paintCanvas.addEventListener('mousemove', e=>{ if(!painting) return; const [x,y]=canvasEventToPixel(e); paintAt(x,y); });
+
+paintCanvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  const t = e.touches[0];
+  painting = true; snapshotBeforeStroke();
+  const [x,y] = canvasEventToPixel(t); paintAt(x,y);
+}, { passive:false });
+paintCanvas.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  if(!painting) return;
+  const t = e.touches[0];
+  const [x,y] = canvasEventToPixel(t); paintAt(x,y);
+}, { passive:false });
+window.addEventListener('touchend', ()=> painting=false);
+
+function setTool(t){
+  tool = t;
+  document.getElementById('penBtn').classList.toggle('active', t==='pen');
+  document.getElementById('eraserBtn').classList.toggle('active', t==='eraser');
+}
+document.getElementById('penBtn').onclick = ()=> setTool('pen');
+document.getElementById('eraserBtn').onclick = ()=> setTool('eraser');
+document.getElementById('colorPicker').oninput = e=>{ brushColor = e.target.value; };
+document.getElementById('brushSize').oninput = e=>{ brushSize = parseInt(e.target.value); document.getElementById('brushLabel').textContent = brushSize+'px'; };
+
+const PALETTE = ['#5ee6c4','#ff8a5b','#f4d35e','#ee6c8b','#7b7ff3','#3a86ff','#2b2118','#ffffff','#5c3d2e','#8b5cf6'];
+const swatchWrap = document.getElementById('swatches');
+PALETTE.forEach(c=>{
+  const s = document.createElement('div');
+  s.className='swatch'; s.style.background=c;
+  s.onclick = ()=>{ brushColor=c; document.getElementById('colorPicker').value=c; };
+  swatchWrap.appendChild(s);
+});
+
+// ============================================================
+// 方向確認デバッグテクスチャ
+// ============================================================
+function paintDebugTextureForCurrentPart(){
+  snapshotBeforeStroke();
+  const cube = GEOMETRIES[currentPart].cubes[0];
+  const ctx = currentCtx();
+  ctx.clearRect(0,0,TEX_SIZE,TEX_SIZE);
+  const colors = { north:'#e74c3c', south:'#3498db', east:'#2ecc71', west:'#f1c40f', up:'#9b59b6', down:'#e67e22' };
+  const labels = { north:'N', south:'S', east:'E', west:'W', up:'U', down:'D' };
+  Object.keys(cube.uv).forEach(face=>{
+    const [x,y,w,h] = cube.uv[face];
+    ctx.fillStyle = colors[face];
+    ctx.fillRect(x,y,w,h);
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${Math.max(5,Math.min(w,h)-1)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labels[face], x+w/2, y+h/2+0.5);
+  });
+  refreshPaintCanvasView();
+}
+document.getElementById('debugBtn').onclick = paintDebugTextureForCurrentPart;
+
+// ============================================================
+// Three.js ビューア
+// ============================================================
+const viewerEl = document.getElementById('viewer');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0e12);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+viewerEl.appendChild(renderer.domElement);
+renderer.domElement.style.cursor = 'grab';
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(3,5,4);
+scene.add(dirLight);
+
+// 正面（north = -Z方向）が分かるように、床グリッドと矢印を設置
+const grid = new THREE.GridHelper(60, 12, 0x4a5568, 0x252932);
+grid.position.y = -4;
+scene.add(grid);
+const frontArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0,0,-1).normalize(),
+  new THREE.Vector3(0,-4,0),
+  22, 0x5ee6c4, 5, 3.5
+);
+scene.add(frontArrow);
+function makeLabelSprite(text, color){
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const cx = c.getContext('2d');
+  cx.fillStyle = color;
+  cx.font = 'bold 32px sans-serif';
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillText(text, 64, 32);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(10,5,1);
+  return sprite;
+}
+const frontLabel = makeLabelSprite('正面 (N)', '#5ee6c4');
+frontLabel.position.set(0,-4,-26);
+scene.add(frontLabel);
+
+const texture = new THREE.CanvasTexture(currentCanvas());
+texture.magFilter = THREE.NearestFilter;
+texture.minFilter = THREE.NearestFilter;
+
+const material = new THREE.MeshLambertMaterial({ map: texture, transparent:true, alphaTest:0.4, side: THREE.DoubleSide });
+
+let modelGroup = new THREE.Group();
+scene.add(modelGroup);
+
+// 面ごとの4頂点（v0=左上, v1=右上, v3=左下）。
+// east = +X面, west = -X面（Minecraft標準の東西convention）に修正済み。
+function facesForCube(cube){
+  const [ox,oy,oz] = cube.origin;
+  const [w,h,d] = cube.size;
+  const x0=ox, y0=oy, z0=oz, x1=ox+w, y1=oy+h, z1=oz+d;
+  return {
+    north: { v0:[x0,y1,z0], v1:[x1,y1,z0], v3:[x0,y0,z0] },
+    south: { v0:[x1,y1,z1], v1:[x0,y1,z1], v3:[x1,y0,z1] },
+    west:  { v0:[x0,y1,z1], v1:[x0,y1,z0], v3:[x0,y0,z1] },
+    east:  { v0:[x1,y1,z0], v1:[x1,y1,z1], v3:[x1,y0,z0] },
+    up:    { v0:[x0,y1,z1], v1:[x1,y1,z1], v3:[x0,y1,z0] },
+    down:  { v0:[x0,y0,z0], v1:[x1,y0,z0], v3:[x0,y0,z1] }
+  };
+}
+
+// north/south/east/west（側面）は、外側から見たときにテクスチャが
+// 左右反転して見えてしまっていたため、UVのu座標を左右入れ替えて補正する。
+// up/downはこの反転の対象外（元々正しい向き）。
+const SIDE_FACES = new Set(['north','south','east','west']);
+
+function buildCubeMesh(cube){
+  const faces = facesForCube(cube);
+  const positions = [], uvs = [], indices = [];
+  let vi = 0;
+  Object.keys(cube.uv).forEach(faceName=>{
+    const f = faces[faceName];
+    if(!f) return;
+    const [uvX,uvY,uvW,uvH] = cube.uv[faceName];
+    const v0=f.v0, v1=f.v1, v3=f.v3;
+    const v2 = [ v1[0]+v3[0]-v0[0], v1[1]+v3[1]-v0[1], v1[2]+v3[2]-v0[2] ];
+    positions.push(...v0, ...v1, ...v2, ...v3);
+    const u0=uvX/64, u1=(uvX+uvW)/64;
+    const vTop=1-uvY/64, vBottom=1-(uvY+uvH)/64;
+    if(SIDE_FACES.has(faceName)){
+      uvs.push(u1,vTop,  u0,vTop,  u0,vBottom,  u1,vBottom);
+    } else {
+      uvs.push(u0,vTop,  u1,vTop,  u1,vBottom,  u0,vBottom);
+    }
+    indices.push(vi,vi+1,vi+2,  vi,vi+2,vi+3);
+    vi += 4;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.userData.outer = isOuterLayer(cube);
+  return mesh;
+}
+
+function rebuildModel(){
+  while(modelGroup.children.length) modelGroup.remove(modelGroup.children[0]);
+  const geoData = GEOMETRIES[currentPart];
+  geoData.cubes.forEach(cube=> modelGroup.add(buildCubeMesh(cube)));
+  document.getElementById('partName').textContent = geoData.label;
+  document.getElementById('partNameBadge').textContent = geoData.label;
+  buildCubeListUI();
+  centerCameraOnModel();
+}
+
+function buildCubeListUI(){
+  const listEl = document.getElementById('cubeList');
+  listEl.innerHTML = '';
+  const cubes = GEOMETRIES[currentPart].cubes;
+  cubes.forEach((cube, i)=>{
+    const outer = isOuterLayer(cube);
+    const item = document.createElement('label');
+    item.className = 'cube-item';
+    item.innerHTML = `<input type="checkbox" checked data-idx="${i}">
+      <span>${cube.name}</span>
+      <span class="layer-tag ${outer?'outer':'inner'}">${outer?'外側':'内側'}</span>`;
+    const checkbox = item.querySelector('input');
+    checkbox.addEventListener('change', ()=>{
+      modelGroup.children[i].visible = checkbox.checked;
+    });
+    listEl.appendChild(item);
+  });
+}
+function setAllCubeVisibility(predicate){
+  const cubes = GEOMETRIES[currentPart].cubes;
+  const listEl = document.getElementById('cubeList');
+  cubes.forEach((cube,i)=>{
+    const visible = predicate(cube);
+    modelGroup.children[i].visible = visible;
+    const cb = listEl.querySelector(`input[data-idx="${i}"]`);
+    if(cb) cb.checked = visible;
+  });
+}
+document.getElementById('showAllBtn').onclick = ()=> setAllCubeVisibility(()=>true);
+document.getElementById('showInnerOnlyBtn').onclick = ()=> setAllCubeVisibility(c=>!isOuterLayer(c));
+document.getElementById('showOuterOnlyBtn').onclick = ()=> setAllCubeVisibility(c=>isOuterLayer(c));
+
+function switchToPart(key){
+  currentPart = key;
+  refreshPaintCanvasView();
+  rebuildModel();
+  updateUndoRedoButtons();
+}
+
+// --- 手動オービットカメラ ---
+let camTheta = Math.PI - 0.6, camPhi = 1.2, camDist = 40, camTarget = new THREE.Vector3(0,24,0);
+function updateCamera(){
+  const x = camTarget.x + camDist * Math.sin(camPhi) * Math.sin(camTheta);
+  const y = camTarget.y + camDist * Math.cos(camPhi);
+  const z = camTarget.z + camDist * Math.sin(camPhi) * Math.cos(camTheta);
+  camera.position.set(x,y,z);
+  camera.lookAt(camTarget);
+}
+function centerCameraOnModel(){
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length();
+  camTarget.copy(center);
+  camDist = Math.max(size * 1.3, 20);
+  updateCamera();
+}
+
+// --- 3Dモデルに直接ペイント / 空間ドラッグは回転 / ホバーでカーソル切替 ---
+const raycaster = new THREE.Raycaster();
+const mouseNDC = new THREE.Vector2();
+function raycastHit(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouseNDC.x = ((e.clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y = -((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouseNDC, camera);
+  const targets = modelGroup.children.filter(m=>m.visible);
+  const hits = raycaster.intersectObjects(targets);
+  return hits.length ? hits[0] : null;
+}
+function paintFromHit(hit){
+  if(!hit || !hit.uv) return;
+  const px = Math.floor(hit.uv.x*TEX_SIZE);
+  const py = Math.floor((1-hit.uv.y)*TEX_SIZE);
+  paintAt(px, py);
+}
+
+let dragging=false, painting3D=false, lastX=0, lastY=0;
+renderer.domElement.addEventListener('mousedown', e=>{
+  const hit = raycastHit(e);
+  if(hit){
+    painting3D = true;
+    snapshotBeforeStroke();
+    renderer.domElement.style.cursor = 'crosshair';
+    paintFromHit(hit);
+  } else {
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    renderer.domElement.style.cursor = 'grabbing';
+  }
+});
+window.addEventListener('mouseup', ()=>{ dragging=false; painting3D=false; });
+window.addEventListener('mousemove', e=>{
+  if(painting3D){ const hit = raycastHit(e); if(hit) paintFromHit(hit); return; }
+  if(!dragging) return;
+  const dx = e.clientX-lastX, dy = e.clientY-lastY;
+  lastX=e.clientX; lastY=e.clientY;
+  camTheta -= dx*0.01;
+  camPhi = Math.min(Math.max(camPhi - dy*0.01, 0.2), Math.PI-0.2);
+  updateCamera();
+});
+renderer.domElement.addEventListener('mousemove', e=>{
+  if(dragging || painting3D) return;
+  const hit = raycastHit(e);
+  renderer.domElement.style.cursor = hit ? 'crosshair' : 'grab';
+});
+renderer.domElement.addEventListener('wheel', e=>{
+  e.preventDefault();
+  camDist = Math.min(Math.max(camDist + e.deltaY*0.05, 8), 120);
+  updateCamera();
+}, { passive:false });
+renderer.domElement.addEventListener('contextmenu', e=> e.preventDefault());
+
+// --- タッチ操作（スマホ）---
+function touchDist(touches){
+  const dx = touches[0].clientX-touches[1].clientX;
+  const dy = touches[0].clientY-touches[1].clientY;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+let pinchDist = null;
+renderer.domElement.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  if(e.touches.length===2){ pinchDist = touchDist(e.touches); dragging=false; painting3D=false; return; }
+  const t = e.touches[0];
+  const hit = raycastHit(t);
+  if(hit){ painting3D=true; snapshotBeforeStroke(); paintFromHit(hit); }
+  else { dragging=true; lastX=t.clientX; lastY=t.clientY; }
+}, { passive:false });
+renderer.domElement.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  if(e.touches.length===2){
+    const d = touchDist(e.touches);
+    if(pinchDist){ camDist = Math.min(Math.max(camDist + (pinchDist-d)*0.15, 8), 120); updateCamera(); }
+    pinchDist = d;
+    return;
+  }
+  const t = e.touches[0];
+  if(painting3D){ const hit = raycastHit(t); if(hit) paintFromHit(hit); return; }
+  if(!dragging) return;
+  const dx = t.clientX-lastX, dy = t.clientY-lastY;
+  lastX=t.clientX; lastY=t.clientY;
+  camTheta -= dx*0.01;
+  camPhi = Math.min(Math.max(camPhi - dy*0.01, 0.2), Math.PI-0.2);
+  updateCamera();
+}, { passive:false });
+window.addEventListener('touchend', ()=>{ dragging=false; painting3D=false; pinchDist=null; });
+
+function resize(){
+  const w = viewerEl.clientWidth, h = viewerEl.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+function animate(){ requestAnimationFrame(animate); renderer.render(scene, camera); }
+
+document.getElementById('downloadBtn').onclick = ()=>{
+  const link = document.createElement('a');
+  link.download = currentPart + '_texture.png';
+  link.href = currentCanvas().toDataURL('image/png');
+  link.click();
+};
+
+// ============================================================
+// 部位選択モーダル（部位変更はここからのみ）
+// ============================================================
+const startModal = document.getElementById('startModal');
+const uploadInline = document.getElementById('uploadInline');
+const modalPartPick = document.getElementById('modalPartPick');
+let modalSelectedPart = 'chest';
+let hasStarted = false;
+
+function renderModalPartPick(){
+  modalPartPick.innerHTML = '';
+  PART_KEYS.forEach(key=>{
+    const b = document.createElement('button');
+    b.textContent = GEOMETRIES[key].label;
+    b.className = key===modalSelectedPart ? 'active' : '';
+    b.onclick = ()=>{
+      modalSelectedPart = key;
+      renderModalPartPick();
+    };
+    modalPartPick.appendChild(b);
+  });
+}
+// data/geometries.json を読み込んでから部位選択メニューを表示する。
+// （読み込みが終わるまでは「読み込み中」を表示し、各選択肢を押せないようにしておく）
+const choiceButtons = [
+  document.getElementById('choiceTemplate'),
+  document.getElementById('choiceBlank'),
+  document.getElementById('choiceUpload')
+];
+modalPartPick.innerHTML = '<p style="font-size:12px;color:var(--sub);grid-column:1/-1;margin:0;">読み込み中…</p>';
+choiceButtons.forEach(el=> el.style.pointerEvents = 'none');
+
+fetch(DATA_BASE + 'geometries.json')
+  .then(res=>{
+    if(!res.ok) throw new Error('geometries.json の読み込みに失敗しました (HTTP ' + res.status + ')');
+    return res.json();
+  })
+  .then(data=>{
+    GEOMETRIES = data;
+    choiceButtons.forEach(el=> el.style.pointerEvents = '');
+    renderModalPartPick();
+  })
+  .catch(err=>{
+    modalPartPick.innerHTML =
+      '<p style="font-size:12px;color:var(--accent2);grid-column:1/-1;margin:0;">' +
+      '読み込みエラー: ' + err.message + '<br>' +
+      'このHTMLと同じフォルダに data/geometries.json があるか、' +
+      'file:// ではなくローカルサーバー経由（例: python -m http.server）で開いているかご確認ください。' +
+      '</p>';
+    console.error(err);
+  });
+
+document.getElementById('reselectBtn').onclick = ()=>{
+  modalSelectedPart = currentPart;
+  renderModalPartPick();
+  uploadInline.style.display = 'none';
+  startModal.style.display = 'flex';
+};
+
+function closeModalAfterApply(){
+  startModal.style.display = 'none';
+  currentPart = modalSelectedPart;
+  switchToPart(currentPart);
+  if(!hasStarted){
+    hasStarted = true;
+    resize();
+    animate();
+  }
+}
+document.getElementById('choiceTemplate').onclick = ()=>{
+  loadImageIntoPart(modalSelectedPart, TEMPLATES[modalSelectedPart], closeModalAfterApply);
+};
+document.getElementById('choiceBlank').onclick = ()=>{
+  clearPart(modalSelectedPart);
+  closeModalAfterApply();
+};
+document.getElementById('choiceUpload').onclick = ()=>{
+  uploadInline.style.display = uploadInline.style.display === 'block' ? 'none' : 'block';
+};
+document.getElementById('modalFileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadImageIntoPart(modalSelectedPart, ev.target.result, closeModalAfterApply);
+  reader.readAsDataURL(file);
+});
+</script>
+</body>
+</html>
