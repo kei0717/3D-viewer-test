@@ -4,7 +4,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>服追加プレビュー機能</title>
+<title>3D テクスチャエディタ</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
@@ -22,19 +22,19 @@
     width:440px; flex-shrink:0; background:var(--panel);
     border-right:1px solid var(--line); padding:18px; overflow-y:auto;
   }
-  h1{ font-size:15px; letter-spacing:.02em; margin:0 0 2px; color:var(--text); }
-  .sub{ font-size:12px; color:var(--sub); margin:0 0 18px; }
+  h1{ font-size:18px; font-weight:600; letter-spacing:.02em; margin:0 0 16px; color:var(--text); }
   .block{ margin-bottom:20px; }
   .label{ font-size:11px; color:var(--sub); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; display:block; }
   .current-part{
     display:flex; align-items:center; justify-content:space-between;
-    background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:8px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:4px;
   }
   .current-part b{ font-size:15px; }
   .reselect-btn{
-    background:var(--accent); color:#0d1512; border:none; padding:10px 14px; border-radius:6px;
+    background:var(--accent); color:#0d1512; border:none; padding:8px 12px; border-radius:6px;
     font-size:12px; font-weight:600; cursor:pointer;
   }
+  .reselect-btn:hover{ filter:brightness(1.1); }
   .row{ display:flex; align-items:center; gap:10px; }
   .swatches{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   .swatch{ width:26px; height:26px; border-radius:5px; border:1px solid var(--line); cursor:pointer; }
@@ -44,7 +44,7 @@
   }
   .tool-toggle button{
     flex:1; padding:11px 0; background:var(--panel2); color:var(--sub); border:none; cursor:pointer; font-size:13px;
-    border-right:1px solid var(--line);
+    border-right:1px solid var(--line); transition:background 0.2s, color 0.2s;
   }
   .tool-toggle button:last-child{ border-right:none; }
   .tool-toggle button.pen.active{ background:var(--accent); color:#0d1512; }
@@ -55,7 +55,7 @@
     flex:1; background:var(--panel2); border:1px solid var(--line); color:var(--text);
     padding:10px 0; border-radius:6px; font-size:13px; cursor:pointer;
   }
-  .undo-redo button:disabled{ color:#4a5162; cursor:default; }
+  .undo-redo button:disabled{ color:#4a5162; cursor:default; border-color:transparent; }
   .undo-redo button:not(:disabled):hover{ border-color:var(--accent); }
   .quick-actions{ display:flex; gap:6px; margin-bottom:8px; }
   .quick-actions button{
@@ -76,7 +76,7 @@
   .layer-tag.inner{ color:var(--accent); }
   .canvas-wrap{
     background:#0d0e12; border:1px solid var(--line); border-radius:8px; padding:10px;
-    display:flex; justify-content:center;
+    display:flex; justify-content:center; position:relative;
   }
   #paintCanvas{
     cursor:crosshair; border-radius:2px; touch-action:none;
@@ -90,63 +90,64 @@
     background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
     background-color:#2c313c;
   }
-  .hint{ font-size:11px; color:var(--sub); margin-top:8px; line-height:1.5; }
+  .hint{ font-size:11px; color:var(--sub); line-height:1.4; margin:4px 0 0 2px;}
   .main{ flex:1; position:relative; min-width:0; }
   #viewer{ width:100%; height:100%; display:block; touch-action:none; }
   .badge{
     position:absolute; top:16px; left:16px; background:rgba(28,31,38,.85);
     border:1px solid var(--line); border-radius:6px; padding:8px 12px; font-size:12px; color:var(--sub);
-    max-width:280px;
+    max-width:280px; backdrop-filter:blur(4px);
   }
   .badge b{ color:var(--text); }
-  .dl-block{ margin-top:4px; }
+  .dl-block{ margin-top:24px; }
   .dl{
-    width:100%; background:var(--accent); color:#0d1512;
+    width:100%; background:var(--text); color:#0d1512;
     border:none; padding:12px 16px; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;
   }
-  .dl:hover{ filter:brightness(1.08); }
+  .dl:hover{ background:var(--accent); }
 
   #startModal{
-    position:fixed; inset:0; background:rgba(10,11,14,.88); z-index:50;
+    position:fixed; inset:0; background:rgba(10,11,14,.92); z-index:50;
     display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;
+    backdrop-filter:blur(4px);
   }
   .modal-card{
-    width:480px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px;
+    width:480px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:32px 24px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.4);
   }
-  .modal-card h2{ margin:0 0 6px; font-size:16px; }
-  .modal-card p.sub{ margin-bottom:16px; }
-  .modal-part-pick{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:20px; }
+  .modal-card h2{ margin:0 0 8px; font-size:18px; color:var(--text); }
+  .modal-card p.sub{ margin:0 0 24px; font-size:13px; }
+  .modal-part-pick{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:24px; }
   .modal-part-pick button{
     background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:12px 4px; border-radius:6px; font-size:13px; cursor:pointer;
+    padding:12px 4px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; transition:all 0.2s;
   }
-  .modal-part-pick button.active{ border-color:var(--accent); color:var(--accent); background:#1a2b28; }
+  .modal-part-pick button:hover{ border-color:var(--sub); }
+  .modal-part-pick button.active{ border-color:var(--accent); color:var(--accent); background:rgba(94, 230, 196, 0.1); }
   .choice{
     display:flex; align-items:flex-start; gap:12px; background:var(--panel2);
-    border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:10px; cursor:pointer;
+    border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:10px; cursor:pointer; transition:all 0.2s;
   }
-  .choice:hover{ border-color:var(--accent); }
-  .choice .icon{ font-size:20px; line-height:1; }
-  .choice .txt b{ display:block; font-size:13px; margin-bottom:2px; }
-  .choice .txt span{ font-size:12px; color:var(--sub); }
-  #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--line); border-radius:8px; }
-  #uploadInline input{ width:100%; font-size:12px; color:var(--sub); }
+  .choice:hover{ border-color:var(--accent); background:rgba(94, 230, 196, 0.05); }
+  .choice .txt b{ display:block; font-size:14px; margin-bottom:4px; color:var(--text); }
+  .choice .txt span{ font-size:12px; color:var(--sub); line-height:1.4; display:block; }
+  #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--sub); border-radius:8px; }
+  #uploadInline input{ width:100%; font-size:12px; color:var(--text); }
 
   .grid-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text); 
-    padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;
+    padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; transition:all 0.2s;
   }
   .grid-btn:hover{ border-color:var(--accent); }
   .grid-btn.active{ border-color:var(--accent); color:var(--accent); }
 
-  /* ---- モバイル対応 ---- */
   @media (max-width: 880px){
     body{ overflow-y:auto; height:auto; }
     .app{ flex-direction:column; height:auto; min-height:100vh; }
     .side{ width:100%; max-height:none; border-right:none; border-bottom:1px solid var(--line); order:2; }
     .main{ height:56vh; min-height:320px; order:1; }
     .badge{ font-size:11px; max-width:60%; }
-    .modal-card{ padding:18px; }
+    .modal-card{ padding:24px 16px; }
     .swatch{ width:30px; height:30px; }
     .tool-toggle button{ padding:13px 0; font-size:14px; }
   }
@@ -156,59 +157,54 @@
 
 <div id="startModal">
   <div class="modal-card">
-    <h2 id="modalTitle">部位とテクスチャの元をえらんでください</h2>
-    <p class="sub">まず部位を選び、そのあと初期状態（テンプレート／透明／既存画像）を選びます。</p>
+    <h2 id="modalTitle">新規プロジェクト</h2>
+    <p class="sub">編集する部位と、キャンバスの初期状態を選択してください。</p>
 
     <div class="modal-part-pick" id="modalPartPick"></div>
 
     <div class="choice" id="choiceTemplate">
-      <!-- <div class="icon">🎨</div> -->
-      <div class="txt"><b>テンプレート画像を使う</b><span>ガイド付きテンプレートから開始</span></div>
+      <div class="txt"><b>テンプレートから作成</b><span>各パーツの位置が記載されたガイド付き画像で開始します。</span></div>
     </div>
     <div class="choice" id="choiceBlank">
-      <!-- <div class="icon">⬜</div> -->
-      <div class="txt"><b>完全透明から始める</b><span>まっさらな状態（すべて透明）から自分で塗っていく</span></div>
+      <div class="txt"><b>透明なキャンバスで作成</b><span>すべて透明な状態から新しく描き始めます。</span></div>
     </div>
     <div class="choice" id="choiceUpload">
-      <!-- <div class="icon">📂</div> -->
-      <div class="txt"><b>既存の画像を編集する</b><span>手持ちのPNG（64×64）を読み込んで続きから編集</span></div>
+      <div class="txt"><b>手持ちの画像を読み込む</b><span>作成済みのテクスチャ (64×64 PNG) を読み込んで編集します。</span></div>
     </div>
 
     <div id="uploadInline">
       <input type="file" id="modalFileInput" accept="image/png">
-      <p class="hint" style="margin-top:8px;">選んだ部位にこの画像を読み込みます。</p>
     </div>
   </div>
 </div>
 
 <div class="app">
   <div class="side">
-    <h1>UVペイント → 3Dプレビュー</h1>
-    <p class="sub">サンプル / clothing.geo.json ベース</p>
+    <h1>3D Texture Editor</h1>
 
     <div class="block">
-      <span class="label">現在の部位</span>
+      <span class="label">編集中の部位</span>
       <div class="current-part">
         <b id="partName">服</b>
-        <button class="reselect-btn" id="reselectBtn">部位を選びなおす</button>
+        <button class="reselect-btn" id="reselectBtn">部位を変更</button>
       </div>
-      <p class="hint">部位の切り替えはこのボタンからのみ行えます（描いた内容は部位ごとに保存されています）。</p>
+      <p class="hint">※各部位の編集内容は自動的に保持されます。</p>
     </div>
 
     <div class="block">
-      <span class="label">元に戻す／やり直す</span>
+      <span class="label">操作履歴</span>
       <div class="undo-redo">
-        <button id="undoBtn" disabled>↶ 元に戻す</button>
+        <button id="undoBtn" disabled>↶ 取り消す</button>
         <button id="redoBtn" disabled>↷ やり直す</button>
       </div>
     </div>
 
     <div class="block">
-      <span class="label">パーツの表示・非表示（裏に塗りたい時は隠す）</span>
+      <span class="label">レイヤー表示設定</span>
       <div class="quick-actions">
         <button id="showAllBtn">すべて表示</button>
-        <button id="showInnerOnlyBtn">内側だけ</button>
-        <button id="showOuterOnlyBtn">外側だけ</button>
+        <button id="showInnerOnlyBtn">内側のみ</button>
+        <button id="showOuterOnlyBtn">外側のみ</button>
       </div>
       <div class="cube-list" id="cubeList"></div>
     </div>
@@ -225,41 +221,40 @@
       <div class="row" style="margin-top:10px;">
         <input type="color" id="colorPicker" value="#5ee6c4">
         <input type="range" id="brushSize" min="1" max="6" value="1" style="flex:1;">
-        <span id="brushLabel" style="font-size:12px; color:var(--sub);">1px</span>
+        <span id="brushLabel" style="font-size:12px; color:var(--sub); width:24px; text-align:right;">1px</span>
       </div>
-      <span class="label" style="margin-top:12px;">カラー履歴</span>
+      <span class="label" style="margin-top:16px;">カラー履歴</span>
       <div class="swatches" id="swatches"></div>
     </div>
 
     <div class="block">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span class="label" style="margin-bottom:0;">UVテンプレート (64×64)</span>
+        <span class="label" style="margin-bottom:0;">キャンバス (64×64)</span>
         <div style="display:flex; gap:6px;">
-          <button id="toggleGrid2DBtn" class="grid-btn">2Dグリッド: OFF</button>
-          <button id="toggleGrid3DBtn" class="grid-btn">3Dグリッド: OFF</button>
+          <button id="toggleGrid2DBtn" class="grid-btn">2Dグリッド</button>
+          <button id="toggleGrid3DBtn" class="grid-btn">3Dグリッド</button>
         </div>
       </div>
       <div class="canvas-wrap">
         <canvas id="paintCanvas" width="384" height="384"></canvas>
       </div>
-      <p class="hint">グレーの市松模様は透明を表す表示上のガイドで、書き出したPNGには含まれません。3Dモデルの上をタップ／クリック＆ドラッグしても直接塗れます（モデルの無い場所からドラッグを始めると回転になります）。</p>
     </div>
 
     <div class="block dl-block">
-      <button class="dl" id="downloadBtn">この部位をPNGで書き出し</button>
+      <button class="dl" id="downloadBtn">PNG形式でエクスポート</button>
     </div>
   </div>
 
   <div class="main">
     <div id="viewer"></div>
-    <div class="badge">部位: <b id="partNameBadge">服</b> ／ 空いている場所からドラッグ・スワイプで回転、下のグリッドの矢印が正面方向</div>
+    <div class="badge">部位: <b id="partNameBadge">服</b> | カメラ操作: 空白をドラッグ</div>
   </div>
 </div>
 
 <script>
 // ============================================================
-// ジオメトリ定義とテンプレート画像は、このHTMLと同じフォルダの
-// data/ 以下からすべて読み込みます（このファイル自身には埋め込みません）。
+// Data Loading (Geometries & Templates)
+// ============================================================
 const DATA_BASE = './data/';
 let GEOMETRIES = null;
 
@@ -298,7 +293,6 @@ let currentPart = 'chest';
 let showGrid2D = false;
 let showGrid3D = false;
 
-// 3Dモデル用のベーステクスチャ（常に64x64サイズのキャンバスを参照）
 const texture = new THREE.CanvasTexture(currentCanvas());
 texture.magFilter = THREE.NearestFilter;
 texture.minFilter = THREE.NearestFilter;
@@ -308,40 +302,35 @@ function currentCtx(){ return currentCanvas().getContext('2d'); }
 
 document.getElementById('toggleGrid2DBtn').onclick = (e) => {
   showGrid2D = !showGrid2D;
-  e.target.textContent = `2Dグリッド: ${showGrid2D ? 'ON' : 'OFF'}`;
   e.target.classList.toggle('active', showGrid2D);
   refreshPaintCanvasView();
 };
 
 document.getElementById('toggleGrid3DBtn').onclick = (e) => {
   showGrid3D = !showGrid3D;
-  e.target.textContent = `3Dグリッド: ${showGrid3D ? 'ON' : 'OFF'}`;
   e.target.classList.toggle('active', showGrid3D);
-  // シェーダーのフラグを更新して再コンパイルなしに即時反映
   if (material && material.userData.gridUniforms) {
     material.userData.gridUniforms.showGrid3D.value = showGrid3D ? 1.0 : 0.0;
   }
 };
 
 function refreshPaintCanvasView(){
-  // --- 2Dキャンバスの更新 ---
   pctx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
   pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
   
   if(showGrid2D) {
     pctx.lineWidth = 1.0;
-    pctx.strokeStyle = 'rgba(150, 150, 150, 0.6)'; // シンプルなグレーの細線
+    pctx.strokeStyle = 'rgba(150, 150, 150, 0.4)'; 
     pctx.beginPath();
     const cellSize = paintCanvas.width / TEX_SIZE;
     for(let i = 0; i <= TEX_SIZE; i++){
-      const pos = Math.floor(i * cellSize) + 0.5; // +0.5でCanvas上の線が1pxでシャープになる
+      const pos = Math.floor(i * cellSize) + 0.5; 
       pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
       pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
     }
     pctx.stroke();
   }
 
-  // --- 3Dモデル用テクスチャの更新 ---
   if(typeof texture !== 'undefined') {
     texture.image = currentCanvas();
     texture.needsUpdate = true;
@@ -366,7 +355,7 @@ function clearPart(partKey){
 }
 
 // ============================================================
-// 元に戻す／やり直す
+// Undo / Redo
 // ============================================================
 function updateUndoRedoButtons(){
   document.getElementById('undoBtn').disabled = undoStacks[currentPart].length===0;
@@ -407,14 +396,13 @@ window.addEventListener('keydown', e=>{
 });
 
 // ============================================================
-// ペイントツール & カラー履歴
+// Tools & Color History
 // ============================================================
 let tool = 'pen';
 let brushColor = '#5ee6c4';
 let brushSize = 1;
 let painting = false;
 
-// 初期履歴パレット
 let colorHistory = ['#5ee6c4','#ff8a5b','#f4d35e','#ee6c8b','#7b7ff3','#3a86ff','#2b2118','#ffffff','#5c3d2e','#8b5cf6'];
 const swatchWrap = document.getElementById('swatches');
 
@@ -432,7 +420,6 @@ function updateColorHistoryUI() {
 function changeColor(hex) {
   brushColor = hex;
   document.getElementById('colorPicker').value = hex;
-  // スポイトから色を取得した場合は、自動的にペンツールに戻す
   if (tool === 'spoid') setTool('pen');
 }
 
@@ -456,7 +443,7 @@ function paintAt(px, py){
   
   if (tool === 'spoid') {
     const pixel = ctx.getImageData(px, py, 1, 1).data;
-    if (pixel[3] > 0) { // 透明部分は無視
+    if (pixel[3] > 0) { 
       const hex = rgbToHex(pixel[0], pixel[1], pixel[2]);
       changeColor(hex);
       addColorToHistory(hex);
@@ -482,7 +469,6 @@ function canvasEventToPixel(e){
   return [x,y];
 }
 
-// キャンバスへの描画イベント
 paintCanvas.addEventListener('mousedown', e=>{
   painting = true;
   if(tool !== 'spoid'){
@@ -523,12 +509,11 @@ document.getElementById('eraserBtn').onclick = ()=> setTool('eraser');
 document.getElementById('spoidBtn').onclick = ()=> setTool('spoid');
 
 document.getElementById('colorPicker').oninput = e=>{ brushColor = e.target.value; };
-// カラーピッカーで色を確定した時に履歴に追加
 document.getElementById('colorPicker').onchange = e=>{ addColorToHistory(e.target.value); };
 document.getElementById('brushSize').oninput = e=>{ brushSize = parseInt(e.target.value); document.getElementById('brushLabel').textContent = brushSize+'px'; };
 
 // ============================================================
-// Three.js ビューア & カスタムシェーダー（ズーム非依存のグリッド）
+// Three.js Viewer & Custom Shader for Grid
 // ============================================================
 const viewerEl = document.getElementById('viewer');
 const scene = new THREE.Scene();
@@ -539,7 +524,6 @@ const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
 viewerEl.appendChild(renderer.domElement);
 renderer.domElement.style.cursor = 'grab';
 
-// --- ライティングの調整 ---
 scene.add(new THREE.AmbientLight(0xffffff, 0.5)); 
 
 const mainLight = new THREE.DirectionalLight(0xffffff, 0.6);
@@ -559,28 +543,7 @@ const frontArrow = new THREE.ArrowHelper(
   22, 0x5ee6c4, 5, 3.5
 );
 scene.add(frontArrow);
-function makeLabelSprite(text, color){
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 64;
-  const cx = c.getContext('2d');
-  cx.fillStyle = color;
-  cx.font = 'bold 32px sans-serif';
-  cx.textAlign = 'center'; cx.textBaseline = 'middle';
-  cx.fillText(text, 64, 32);
-  const tex = new THREE.CanvasTexture(c);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(10,5,1);
-  return sprite;
-}
-const frontLabel = makeLabelSprite('正面 (N)', '#5ee6c4');
-frontLabel.position.set(0,-4,-26);
-scene.add(frontLabel);
 
-// ============================================================
-// マテリアルのShaderをフックし、fwidth()計算によって
-// 常に「画面上の太さが一定になる」極細グリッドを描画する
-// ============================================================
 const material = new THREE.MeshLambertMaterial({ 
   map: texture, 
   transparent: true, 
@@ -588,27 +551,22 @@ const material = new THREE.MeshLambertMaterial({
   side: THREE.DoubleSide 
 });
 
-// fwidth関数を有効にするための拡張機能
 material.extensions = { derivatives: true };
 material.userData.gridUniforms = { showGrid3D: { value: 0.0 } };
 
 material.onBeforeCompile = (shader) => {
   shader.uniforms.showGrid3D = material.userData.gridUniforms.showGrid3D;
   
-  // フラグメントシェーダーにuniform変数を追加
   shader.fragmentShader = `
     uniform float showGrid3D;
     ${shader.fragmentShader}
   `;
   
-  // 透明度テスト(Alpha Test)の処理を書き換え：
-  // 「グリッドのピクセル」と判定されたら透過で破棄(discard)せず強制描画する
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <alphatest_fragment>',
     `
     float isGrid = 0.0;
     if (showGrid3D > 0.5) {
-        // fwidthを使って、ズーム率に関係なく画面上の1ピクセル幅を計算する
         vec2 coord = vUv * 64.0;
         vec2 gridDist = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
         float lineDist = min(gridDist.x, gridDist.y);
@@ -616,23 +574,18 @@ material.onBeforeCompile = (shader) => {
     }
     
     #ifdef ALPHATEST
-        // 元々透明な場所でも、グリッド線の部分はdiscard(非表示)を回避させる
         if ( diffuseColor.a < ALPHATEST && isGrid <= 0.0 ) discard;
     #endif
     `
   );
   
-  // 最終的な色の出力部分を書き換え：
-  // グリッド線と判定された場所にグレーのカラーを重ねる
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <dithering_fragment>',
     `
     #include <dithering_fragment>
     
     if (showGrid3D > 0.5 && isGrid > 0.0) {
-        // グレーの線を描画 (RGBを上書き)
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55), isGrid * 0.8);
-        // 透明な場所でもグリッドが見えるように、アルファ値を底上げする
         gl_FragColor.a = max(gl_FragColor.a, isGrid * 0.8);
     }
     `
@@ -732,7 +685,7 @@ function switchToPart(key){
   updateUndoRedoButtons();
 }
 
-// --- 手動オービットカメラ ---
+// --- Orbit Camera Controls ---
 let camTheta = Math.PI - 0.6, camPhi = 1.2, camDist = 40, camTarget = new THREE.Vector3(0,24,0);
 function updateCamera(){
   const x = camTarget.x + camDist * Math.sin(camPhi) * Math.sin(camTheta);
@@ -750,7 +703,7 @@ function centerCameraOnModel(){
   updateCamera();
 }
 
-// --- 3Dモデルに直接ペイント / 空間ドラッグは回転 / ホバーでカーソル切替 ---
+// --- 3D Model Paint & Interaction ---
 const raycaster = new THREE.Raycaster();
 const mouseNDC = new THREE.Vector2();
 function raycastHit(e){
@@ -808,7 +761,7 @@ renderer.domElement.addEventListener('wheel', e=>{
 }, { passive:false });
 renderer.domElement.addEventListener('contextmenu', e=> e.preventDefault());
 
-// --- タッチ操作（スマホ）---
+// --- Touch Controls ---
 function touchDist(touches){
   const dx = touches[0].clientX-touches[1].clientX;
   const dy = touches[0].clientY-touches[1].clientY;
@@ -866,7 +819,7 @@ document.getElementById('downloadBtn').onclick = ()=>{
 };
 
 // ============================================================
-// 部位選択モーダル（部位変更はここからのみ）
+// Initialization Modal
 // ============================================================
 const startModal = document.getElementById('startModal');
 const uploadInline = document.getElementById('uploadInline');
@@ -892,12 +845,12 @@ const choiceButtons = [
   document.getElementById('choiceBlank'),
   document.getElementById('choiceUpload')
 ];
-modalPartPick.innerHTML = '<p style="font-size:12px;color:var(--sub);grid-column:1/-1;margin:0;">読み込み中…</p>';
+modalPartPick.innerHTML = '<p style="font-size:12px;color:var(--sub);grid-column:1/-1;margin:0;">設定データを読み込み中...</p>';
 choiceButtons.forEach(el=> el.style.pointerEvents = 'none');
 
 fetch(DATA_BASE + 'geometries.json')
   .then(res=>{
-    if(!res.ok) throw new Error('geometries.json の読み込みに失敗しました (HTTP ' + res.status + ')');
+    if(!res.ok) throw new Error('Data load failed');
     return res.json();
   })
   .then(data=>{
@@ -908,9 +861,8 @@ fetch(DATA_BASE + 'geometries.json')
   .catch(err=>{
     modalPartPick.innerHTML =
       '<p style="font-size:12px;color:var(--accent2);grid-column:1/-1;margin:0;">' +
-      '読み込みエラー: ' + err.message + '<br>' +
-      'このHTMLと同じフォルダに data/geometries.json があるか、' +
-      'file:// ではなくローカルサーバー経由（例: python -m http.server）で開いているかご確認ください。' +
+      '設定ファイルの読み込みに失敗しました。<br>' +
+      'data/geometries.json が存在するか確認してください。' +
       '</p>';
     console.error(err);
   });
