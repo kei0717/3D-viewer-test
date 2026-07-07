@@ -20,7 +20,7 @@
   .app{ display:flex; height:100vh; }
   .side{
     width:440px; flex-shrink:0; background:var(--panel); display:flex; flex-direction:column;
-    border-right:1px solid var(--line); overflow:hidden; /* スクロールは内部で行う */
+    border-right:1px solid var(--line); overflow:hidden;
   }
   .side-header { padding:18px 18px 0; flex-shrink:0; }
   .side-scroll { padding:0 18px 18px; overflow-y:auto; flex:1; }
@@ -149,8 +149,6 @@
   .choice:hover{ border-color:var(--accent); background:rgba(94, 230, 196, 0.05); }
   .choice .txt b{ display:block; font-size:14px; margin-bottom:4px; color:var(--text); }
   .choice .txt span{ font-size:12px; color:var(--sub); line-height:1.4; display:block; }
-  #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--sub); border-radius:8px; }
-  #uploadInline input{ width:100%; font-size:12px; color:var(--text); }
 
   .grid-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text); 
@@ -174,6 +172,8 @@
 </head>
 <body>
 
+<input type="file" id="directFileInput" accept="image/png" style="display:none;">
+
 <div id="startModal">
   <div class="modal-card">
     <h2 id="modalTitle">キャンバスの準備</h2>
@@ -185,6 +185,7 @@
     <div class="choice" id="choiceBlank">
       <div class="txt"><b>透明なキャンバスで作成</b><span>すべて透明な状態から新しく描き始めます。</span></div>
     </div>
+
     <div style="margin-top:16px; text-align:right; display:none;" id="cancelModalWrap">
        <button class="reset-btn" id="cancelModalBtn" style="border:none;">キャンセル</button>
     </div>
@@ -201,7 +202,10 @@
           </div>
         <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:flex-start;">
           <p class="hint">※タブを切り替えても編集内容は自動で保持されます。</p>
-          <button class="reset-btn" id="showModalBtn">リセット</button>
+          <div style="display:flex; gap:6px;">
+            <button class="reset-btn" id="importBtn" style="border-color:var(--accent); color:var(--accent);">画像読込</button>
+            <button class="reset-btn" id="showModalBtn">リセット</button>
+          </div>
         </div>
       </div>
     </div>
@@ -291,13 +295,13 @@ const PART_KEYS = ['head','chest','legs','feet'];
 const TEX_SIZE = 64;
 const MAX_HISTORY = 40;
 
-// テクスチャの実データを持つCanvas（見えない裏方）
+// テクスチャの実データを持つCanvas
 const partCanvases = {};
-// 3Dモデルに割り当てるTextureとMaterialの格納庫
+// 3Dモデルに割り当てるTextureとMaterial
 const materials = {};
 const textures = {};
 
-// グローバルなUndo/Redo履歴（部位をまたいで履歴を統合）
+// グローバルなUndo/Redo履歴
 let globalUndo = [];
 let globalRedo = [];
 
@@ -309,7 +313,7 @@ PART_KEYS.forEach(k=>{
   partCanvases[k] = c;
 });
 
-// 現在の表示モード ('all' または 'head', 'chest' など)
+// 現在の表示モード
 let currentPart = 'all'; 
 let showGrid2D = false;
 let showGrid3D = false;
@@ -324,7 +328,6 @@ document.getElementById('toggleGrid2DBtn').onclick = (e) => {
 document.getElementById('toggleGrid3DBtn').onclick = (e) => {
   showGrid3D = !showGrid3D;
   e.target.classList.toggle('active', showGrid3D);
-  // 全マテリアルのシェーダーフラグを更新
   Object.values(materials).forEach(mat => {
     if (mat && mat.userData.gridUniforms) {
       mat.userData.gridUniforms.showGrid3D.value = showGrid3D ? 1.0 : 0.0;
@@ -332,9 +335,7 @@ document.getElementById('toggleGrid3DBtn').onclick = (e) => {
   });
 };
 
-// 画面上の2Dキャンバスを更新する
 function refreshAllDisplayCanvases(){
-  // UIに表示されている全キャンバスを更新
   document.querySelectorAll('.ui-canvas').forEach(uiCanvas => {
     const key = uiCanvas.dataset.partKey;
     if(!key) return;
@@ -357,7 +358,6 @@ function refreshAllDisplayCanvases(){
     }
   });
 
-  // 3D側のテクスチャも更新
   PART_KEYS.forEach(k => {
     if(textures[k]) {
       textures[k].needsUpdate = true;
@@ -486,7 +486,6 @@ function paintAt(partKey, px, py){
   refreshAllDisplayCanvases();
 }
 
-// 2Dキャンバス用のイベントバインディング
 function bind2DCanvasEvents(uiCanvas, partKey) {
   function canvasEventToPixel(e){
     const rect = uiCanvas.getBoundingClientRect();
@@ -543,6 +542,33 @@ document.getElementById('colorPicker').onchange = e=>{ addColorToHistory(e.targe
 document.getElementById('brushSize').oninput = e=>{ brushSize = parseInt(e.target.value); document.getElementById('brushLabel').textContent = brushSize+'px'; };
 
 // ============================================================
+// 手持ち画像のインポート (Import File)
+// ============================================================
+document.getElementById('importBtn').onclick = () => {
+  if (currentPart === 'all') {
+    alert('画像を読み込む部位のタブ（頭、服、ズボン、靴のいずれか）を先に選択してください。');
+    return;
+  }
+  document.getElementById('directFileInput').click();
+};
+
+document.getElementById('directFileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    // インポート前に履歴を保存
+    snapshotBeforeStroke(currentPart);
+    loadImageIntoPart(currentPart, ev.target.result, () => {
+      refreshAllDisplayCanvases();
+      updateUndoRedoButtons();
+    });
+  };
+  reader.readAsDataURL(file);
+  e.target.value = ''; // 連続で同じファイルを読み込めるようにリセット
+});
+
+// ============================================================
 // Three.js Viewer & Custom Shader for Grid
 // ============================================================
 const viewerEl = document.getElementById('viewer');
@@ -572,7 +598,6 @@ const frontArrow = new THREE.ArrowHelper(
 );
 scene.add(frontArrow);
 
-// パーツごとのマテリアルを生成
 PART_KEYS.forEach(k => {
   textures[k] = new THREE.CanvasTexture(partCanvases[k]);
   textures[k].magFilter = THREE.NearestFilter;
@@ -656,7 +681,7 @@ function buildCubeMesh(cube, partKey){
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, materials[partKey]);
   mesh.userData.outer = isOuterLayer(cube);
-  mesh.userData.partKey = partKey; // ★どの部位のメッシュか記憶させる★
+  mesh.userData.partKey = partKey;
   return mesh;
 }
 
@@ -685,20 +710,13 @@ function buildCubeListUI(){
       const outer = isOuterLayer(cube);
       const item = document.createElement('label');
       item.className = 'cube-item';
-      // どの部位のメッシュかを判定してオンオフできるようにする
       item.innerHTML = `<input type="checkbox" checked data-part="${key}" data-cname="${cube.name}">
         <span>${currentPart === 'all' ? `[${GEOMETRIES[key].label}] ` : ''}${cube.name}</span>
         <span class="layer-tag ${outer?'outer':'inner'}">${outer?'外側':'内側'}</span>`;
       
       const checkbox = item.querySelector('input');
       checkbox.addEventListener('change', ()=>{
-        modelGroup.children.forEach(mesh => {
-          // Geometry作成時にメッシュ名等を持たせていないので、順番か判定で探す
-          // ここではシンプルに userdata.partKey と outer 判定で一括操作するか、名前を持たせます
-        });
-        // ※正確な表示切替のため、mesh自体を検索します
         const targetMeshes = modelGroup.children.filter(m => m.userData.partKey === key);
-        // 同じ名前のキューブがあるかもしれないので簡易的に実装（本来はID管理が良い）
         const cubeIndex = GEOMETRIES[key].cubes.indexOf(cube);
         if(targetMeshes[cubeIndex]) targetMeshes[cubeIndex].visible = checkbox.checked;
       });
@@ -733,7 +751,6 @@ function renderPartTabs() {
   const container = document.getElementById('partTabs');
   container.innerHTML = '';
   
-  // 全身タブ
   const btnAll = document.createElement('button');
   btnAll.className = `part-tab ${currentPart === 'all' ? 'active' : ''}`;
   btnAll.textContent = '全身 (All)';
@@ -769,11 +786,10 @@ function build2DCanvasesUI() {
     canvas.className = 'ui-canvas';
     canvas.width = 384; 
     canvas.height = 384;
-    canvas.dataset.partKey = key; // ★重要: イベントで使う部位キー
+    canvas.dataset.partKey = key; 
     wrap.appendChild(canvas);
     container.appendChild(wrap);
 
-    // イベントのバインド
     bind2DCanvasEvents(canvas, key);
   });
 }
@@ -781,11 +797,10 @@ function build2DCanvasesUI() {
 function switchToPart(key){
   currentPart = key;
   renderPartTabs(); 
-  build2DCanvasesUI(); // 表示モードに応じてキャンバスUIを再生成
+  build2DCanvasesUI(); 
   refreshAllDisplayCanvases();
   rebuildModel();
   
-  // ダウンロードボタンの表示制御
   if(currentPart === 'all') {
     document.getElementById('downloadBtn').style.display = 'none';
   } else {
@@ -828,12 +843,11 @@ function paintFromHit(hit){
   if(!hit || !hit.uv) return;
   const px = Math.floor(hit.uv.x*TEX_SIZE);
   const py = Math.floor((1-hit.uv.y)*TEX_SIZE);
-  // ★ hit.object.userData.partKey に入っている部位へ直接書き込む ★
   paintAt(hit.object.userData.partKey, px, py);
 }
 
 let dragging=false, painting3D=false, lastX=0, lastY=0;
-let lastPaintedPart = null; // ドラッグ中のスナップショット重複を防ぐため
+let lastPaintedPart = null; 
 
 renderer.domElement.addEventListener('mousedown', e=>{
   const hit = raycastHit(e);
@@ -857,7 +871,6 @@ window.addEventListener('mousemove', e=>{
   if(painting3D){ 
     const hit = raycastHit(e); 
     if(hit) {
-      // もしドラッグ中に別の部位にまたがったら、その部位用のスナップショットを撮る
       if(hit.object.userData.partKey !== lastPaintedPart && tool !== 'spoid') {
          lastPaintedPart = hit.object.userData.partKey;
          snapshotBeforeStroke(lastPaintedPart);
@@ -1014,13 +1027,13 @@ function closeModalAfterApply(){
   startModal.style.display = 'none';
   if(!hasStarted){
     hasStarted = true;
-    currentPart = 'all'; // 初回は全身モードでスタート
+    currentPart = 'all'; 
     switchToPart(currentPart);
     resize();
     animate();
   } else {
     refreshAllDisplayCanvases();
-    globalUndo = []; globalRedo = []; // リセット時は履歴クリア
+    globalUndo = []; globalRedo = []; 
     updateUndoRedoButtons();
   }
 }
