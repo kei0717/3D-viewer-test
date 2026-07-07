@@ -298,45 +298,8 @@ let currentPart = 'chest';
 let showGrid2D = false;
 let showGrid3D = false;
 
-// ============================================================
-// 3D用の合成テクスチャキャンバス設定
-// 解像度を1024x1024まで引き上げ、グリッド線を極限まで細くシャープにします。
-// ============================================================
-const tex3DCanvas = document.createElement('canvas');
-tex3DCanvas.width = 1024; 
-tex3DCanvas.height = 1024;
-const tex3DCtx = tex3DCanvas.getContext('2d');
-tex3DCtx.imageSmoothingEnabled = false;
-
-// 3D用グリッドパターン（白と黒の極細線をずらして重ね、どんな色の上でも目立つようにする）
-const gridPatternCanvas = document.createElement('canvas');
-gridPatternCanvas.width = 1024; 
-gridPatternCanvas.height = 1024;
-const gpCtx = gridPatternCanvas.getContext('2d');
-gpCtx.lineWidth = 1;
-
-// 黒い影の線
-gpCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-gpCtx.beginPath();
-for(let i = 0; i <= 1024; i += 16){
-    const pos = i + 1.5;
-    gpCtx.moveTo(pos, 0); gpCtx.lineTo(pos, 1024);
-    gpCtx.moveTo(0, pos); gpCtx.lineTo(1024, pos);
-}
-gpCtx.stroke();
-
-// 白いメインの線
-gpCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-gpCtx.beginPath();
-for(let i = 0; i <= 1024; i += 16){
-    const pos = i + 0.5;
-    gpCtx.moveTo(pos, 0); gpCtx.lineTo(pos, 1024);
-    gpCtx.moveTo(0, pos); gpCtx.lineTo(1024, pos);
-}
-gpCtx.stroke();
-
-// Three.js側のテクスチャとして割り当てる
-const texture = new THREE.CanvasTexture(tex3DCanvas);
+// 3Dモデル用のベーステクスチャ（常に64x64サイズのキャンバスを参照）
+const texture = new THREE.CanvasTexture(currentCanvas());
 texture.magFilter = THREE.NearestFilter;
 texture.minFilter = THREE.NearestFilter;
 
@@ -354,7 +317,10 @@ document.getElementById('toggleGrid3DBtn').onclick = (e) => {
   showGrid3D = !showGrid3D;
   e.target.textContent = `3Dグリッド: ${showGrid3D ? 'ON' : 'OFF'}`;
   e.target.classList.toggle('active', showGrid3D);
-  refreshPaintCanvasView();
+  // シェーダーのフラグを更新して再コンパイルなしに即時反映
+  if (material && material.userData.gridUniforms) {
+    material.userData.gridUniforms.showGrid3D.value = showGrid3D ? 1.0 : 0.0;
+  }
 };
 
 function refreshPaintCanvasView(){
@@ -363,41 +329,21 @@ function refreshPaintCanvasView(){
   pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
   
   if(showGrid2D) {
-    pctx.save();
-    pctx.lineWidth = 0.5;
+    pctx.lineWidth = 1.0;
+    pctx.strokeStyle = 'rgba(150, 150, 150, 0.6)'; // シンプルなグレーの細線
+    pctx.beginPath();
     const cellSize = paintCanvas.width / TEX_SIZE;
-    
-    // 黒い影の線
-    pctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-    pctx.beginPath();
     for(let i = 0; i <= TEX_SIZE; i++){
-      const pos = (i * cellSize) + 0.5;
+      const pos = Math.floor(i * cellSize) + 0.5; // +0.5でCanvas上の線が1pxでシャープになる
       pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
       pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
     }
     pctx.stroke();
-
-    // 白いメインの線
-    pctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-    pctx.beginPath();
-    for(let i = 0; i <= TEX_SIZE; i++){
-      const pos = (i * cellSize) + 0.0;
-      pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
-      pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
-    }
-    pctx.stroke();
-    pctx.restore();
   }
 
   // --- 3Dモデル用テクスチャの更新 ---
   if(typeof texture !== 'undefined') {
-    tex3DCtx.clearRect(0,0,1024,1024);
-    tex3DCtx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, 1024, 1024);
-    
-    if(showGrid3D) {
-      tex3DCtx.drawImage(gridPatternCanvas, 0, 0);
-    }
-    
+    texture.image = currentCanvas();
     texture.needsUpdate = true;
   }
 }
@@ -582,7 +528,7 @@ document.getElementById('colorPicker').onchange = e=>{ addColorToHistory(e.targe
 document.getElementById('brushSize').oninput = e=>{ brushSize = parseInt(e.target.value); document.getElementById('brushLabel').textContent = brushSize+'px'; };
 
 // ============================================================
-// Three.js ビューア
+// Three.js ビューア & カスタムシェーダー（ズーム非依存のグリッド）
 // ============================================================
 const viewerEl = document.getElementById('viewer');
 const scene = new THREE.Scene();
@@ -631,8 +577,67 @@ const frontLabel = makeLabelSprite('正面 (N)', '#5ee6c4');
 frontLabel.position.set(0,-4,-26);
 scene.add(frontLabel);
 
-// ※ textureの定義部分は上部に移動しています
-const material = new THREE.MeshLambertMaterial({ map: texture, transparent:true, alphaTest:0.4, side: THREE.DoubleSide });
+// ============================================================
+// マテリアルのShaderをフックし、fwidth()計算によって
+// 常に「画面上の太さが一定になる」極細グリッドを描画する
+// ============================================================
+const material = new THREE.MeshLambertMaterial({ 
+  map: texture, 
+  transparent: true, 
+  alphaTest: 0.4, 
+  side: THREE.DoubleSide 
+});
+
+// fwidth関数を有効にするための拡張機能
+material.extensions = { derivatives: true };
+material.userData.gridUniforms = { showGrid3D: { value: 0.0 } };
+
+material.onBeforeCompile = (shader) => {
+  shader.uniforms.showGrid3D = material.userData.gridUniforms.showGrid3D;
+  
+  // フラグメントシェーダーにuniform変数を追加
+  shader.fragmentShader = `
+    uniform float showGrid3D;
+    ${shader.fragmentShader}
+  `;
+  
+  // 透明度テスト(Alpha Test)の処理を書き換え：
+  // 「グリッドのピクセル」と判定されたら透過で破棄(discard)せず強制描画する
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <alphatest_fragment>',
+    `
+    float isGrid = 0.0;
+    if (showGrid3D > 0.5) {
+        // fwidthを使って、ズーム率に関係なく画面上の1ピクセル幅を計算する
+        vec2 coord = vUv * 64.0;
+        vec2 gridDist = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+        float lineDist = min(gridDist.x, gridDist.y);
+        isGrid = 1.0 - smoothstep(0.0, 1.0, lineDist);
+    }
+    
+    #ifdef ALPHATEST
+        // 元々透明な場所でも、グリッド線の部分はdiscard(非表示)を回避させる
+        if ( diffuseColor.a < ALPHATEST && isGrid <= 0.0 ) discard;
+    #endif
+    `
+  );
+  
+  // 最終的な色の出力部分を書き換え：
+  // グリッド線と判定された場所にグレーのカラーを重ねる
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <dithering_fragment>',
+    `
+    #include <dithering_fragment>
+    
+    if (showGrid3D > 0.5 && isGrid > 0.0) {
+        // グレーの線を描画 (RGBを上書き)
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55), isGrid * 0.8);
+        // 透明な場所でもグリッドが見えるように、アルファ値を底上げする
+        gl_FragColor.a = max(gl_FragColor.a, isGrid * 0.8);
+    }
+    `
+  );
+};
 
 let modelGroup = new THREE.Group();
 scene.add(modelGroup);
