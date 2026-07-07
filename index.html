@@ -4,7 +4,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>3D テクスチャエディタ</title>
+<title>3D テクスチャエディタ (全身対応版)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
@@ -19,19 +19,22 @@
   }
   .app{ display:flex; height:100vh; }
   .side{
-    width:440px; flex-shrink:0; background:var(--panel);
-    border-right:1px solid var(--line); padding:18px; overflow-y:auto;
+    width:440px; flex-shrink:0; background:var(--panel); display:flex; flex-direction:column;
+    border-right:1px solid var(--line); overflow:hidden; /* スクロールは内部で行う */
   }
+  .side-header { padding:18px 18px 0; flex-shrink:0; }
+  .side-scroll { padding:0 18px 18px; overflow-y:auto; flex:1; }
+  
   h1{ font-size:18px; font-weight:600; letter-spacing:.02em; margin:0 0 16px; color:var(--text); }
   .block{ margin-bottom:20px; }
   .label{ font-size:11px; color:var(--sub); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; display:block; }
   
   /* --- パーツ切り替えタブ --- */
   .part-tabs {
-    display:flex; gap:4px; background:var(--panel2); padding:4px; border-radius:8px; border:1px solid var(--line);
+    display:flex; gap:4px; background:var(--panel2); padding:4px; border-radius:8px; border:1px solid var(--line); flex-wrap:wrap;
   }
   .part-tab {
-    flex:1; padding:8px 0; background:transparent; border:none; color:var(--sub); 
+    flex:1; padding:8px 4px; background:transparent; border:none; color:var(--sub); min-width:60px;
     border-radius:6px; font-size:12px; cursor:pointer; font-weight:600; transition:all 0.2s;
   }
   .part-tab.active { background:var(--panel); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,0.3); }
@@ -71,7 +74,10 @@
     padding:8px 4px; border-radius:6px; font-size:11px; cursor:pointer;
   }
   .quick-actions button:hover{ color:var(--text); }
-  .cube-list{ display:flex; flex-direction:column; gap:6px; }
+  
+  .cube-list{ display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; padding-right:4px; }
+  .cube-list::-webkit-scrollbar { width: 4px; }
+  .cube-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
   .cube-item{
     display:flex; align-items:center; gap:8px; background:var(--panel2);
     border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:12px;
@@ -82,11 +88,18 @@
   }
   .layer-tag.outer{ color:var(--accent2); }
   .layer-tag.inner{ color:var(--accent); }
+  
+  .canvases-container {
+    display: flex; flex-direction: column; gap: 16px;
+  }
   .canvas-wrap{
     background:#0d0e12; border:1px solid var(--line); border-radius:8px; padding:10px;
-    display:flex; justify-content:center; position:relative;
+    display:flex; flex-direction:column; align-items:center; position:relative;
   }
-  #paintCanvas{
+  .canvas-part-label {
+    width: 100%; text-align: left; font-size: 11px; color: var(--accent); margin-bottom: 6px; font-weight: bold;
+  }
+  .ui-canvas{
     cursor:crosshair; border-radius:2px; touch-action:none;
     max-width:100%; height:auto;
     background-image:
@@ -99,21 +112,25 @@
     background-color:#2c313c;
   }
   .hint{ font-size:11px; color:var(--sub); line-height:1.4; margin:4px 0 0 2px;}
+  
   .main{ flex:1; position:relative; min-width:0; }
   #viewer{ width:100%; height:100%; display:block; touch-action:none; }
   .badge{
     position:absolute; top:16px; left:16px; background:rgba(28,31,38,.85);
     border:1px solid var(--line); border-radius:6px; padding:8px 12px; font-size:12px; color:var(--sub);
-    max-width:280px; backdrop-filter:blur(4px);
+    max-width:280px; backdrop-filter:blur(4px); pointer-events: none;
   }
   .badge b{ color:var(--text); }
   .dl-block{ margin-top:24px; }
   .dl{
     width:100%; background:var(--text); color:#0d1512;
-    border:none; padding:12px 16px; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer;
+    border:none; padding:12px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;
+    transition: filter 0.2s;
   }
-  .dl:hover{ background:var(--accent); }
+  .dl:hover{ filter: brightness(1.1); }
+  .dl.all { background: var(--accent2); color: #2a1305; margin-top: 8px; }
 
+  /* Modal */
   #startModal{
     position:fixed; inset:0; background:rgba(10,11,14,.92); z-index:50;
     display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;
@@ -124,14 +141,7 @@
     box-shadow:0 8px 32px rgba(0,0,0,0.4);
   }
   .modal-card h2{ margin:0 0 8px; font-size:18px; color:var(--text); }
-  .modal-card p.sub{ margin:0 0 24px; font-size:13px; }
-  .modal-part-pick{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:24px; }
-  .modal-part-pick button{
-    background:var(--panel2); border:1px solid var(--line); color:var(--text);
-    padding:12px 4px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; transition:all 0.2s;
-  }
-  .modal-part-pick button:hover{ border-color:var(--sub); }
-  .modal-part-pick button.active{ border-color:var(--accent); color:var(--accent); background:rgba(94, 230, 196, 0.1); }
+  .modal-card p.sub{ margin:0 0 24px; font-size:13px; line-height:1.5; }
   .choice{
     display:flex; align-items:flex-start; gap:12px; background:var(--panel2);
     border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:10px; cursor:pointer; transition:all 0.2s;
@@ -153,6 +163,7 @@
     body{ overflow-y:auto; height:auto; }
     .app{ flex-direction:column; height:auto; min-height:100vh; }
     .side{ width:100%; max-height:none; border-right:none; border-bottom:1px solid var(--line); order:2; }
+    .side-scroll{ overflow:visible; }
     .main{ height:56vh; min-height:320px; order:1; }
     .badge{ font-size:11px; max-width:60%; }
     .modal-card{ padding:24px 16px; }
@@ -165,10 +176,8 @@
 
 <div id="startModal">
   <div class="modal-card">
-    <h2 id="modalTitle">新規プロジェクト</h2>
-    <p class="sub" id="modalSub">最初に編集する部位と、初期状態を選択してください。</p>
-
-    <div class="modal-part-pick" id="modalPartPick"></div>
+    <h2 id="modalTitle">キャンバスの準備</h2>
+    <p class="sub" id="modalSub"><span style="color:var(--accent)">※全身(4部位)のキャンバスが一括でセットアップされます。</span></p>
 
     <div class="choice" id="choiceTemplate">
       <div class="txt"><b>テンプレートから作成</b><span>各パーツの位置が記載されたガイド付き画像で開始します。</span></div>
@@ -176,14 +185,6 @@
     <div class="choice" id="choiceBlank">
       <div class="txt"><b>透明なキャンバスで作成</b><span>すべて透明な状態から新しく描き始めます。</span></div>
     </div>
-    <div class="choice" id="choiceUpload">
-      <div class="txt"><b>手持ちの画像を読み込む</b><span>作成済みのテクスチャ (64×64 PNG) を読み込んで編集します。</span></div>
-    </div>
-
-    <div id="uploadInline">
-      <input type="file" id="modalFileInput" accept="image/png">
-    </div>
-    
     <div style="margin-top:16px; text-align:right; display:none;" id="cancelModalWrap">
        <button class="reset-btn" id="cancelModalBtn" style="border:none;">キャンセル</button>
     </div>
@@ -192,75 +193,78 @@
 
 <div class="app">
   <div class="side">
-    <h1>3D Texture Editor</h1>
-
-    <div class="block">
-      <span class="label">編集中の部位</span>
-      <div class="part-tabs" id="partTabs">
-        </div>
-      <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:flex-start;">
-        <p class="hint">※タブを切り替えても編集内容は自動で保持されます。</p>
-        <button class="reset-btn" id="showModalBtn">キャンバスを初期化</button>
-      </div>
-    </div>
-
-    <div class="block">
-      <span class="label">操作履歴</span>
-      <div class="undo-redo">
-        <button id="undoBtn" disabled>↶ 取り消す</button>
-        <button id="redoBtn" disabled>↷ やり直す</button>
-      </div>
-    </div>
-
-    <div class="block">
-      <span class="label">レイヤー表示設定</span>
-      <div class="quick-actions">
-        <button id="showAllBtn">すべて表示</button>
-        <button id="showInnerOnlyBtn">内側のみ</button>
-        <button id="showOuterOnlyBtn">外側のみ</button>
-      </div>
-      <div class="cube-list" id="cubeList"></div>
-    </div>
-
-    <div class="block">
-      <span class="label">ツール</span>
-      <div class="row">
-        <div class="tool-toggle">
-          <button class="pen active" id="penBtn">ペン</button>
-          <button class="eraser" id="eraserBtn">消しゴム</button>
-          <button class="spoid" id="spoidBtn">スポイト</button>
+    <div class="side-header">
+      <h1>3D Texture Editor</h1>
+      <div class="block">
+        <span class="label">編集中の部位</span>
+        <div class="part-tabs" id="partTabs">
+          </div>
+        <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+          <p class="hint">※タブを切り替えても編集内容は自動で保持されます。</p>
+          <button class="reset-btn" id="showModalBtn">リセット</button>
         </div>
       </div>
-      <div class="row" style="margin-top:10px;">
-        <input type="color" id="colorPicker" value="#5ee6c4">
-        <input type="range" id="brushSize" min="1" max="6" value="1" style="flex:1;">
-        <span id="brushLabel" style="font-size:12px; color:var(--sub); width:24px; text-align:right;">1px</span>
-      </div>
-      <span class="label" style="margin-top:16px;">カラー履歴</span>
-      <div class="swatches" id="swatches"></div>
     </div>
 
-    <div class="block">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span class="label" style="margin-bottom:0;">キャンバス (64×64)</span>
-        <div style="display:flex; gap:6px;">
-          <button id="toggleGrid2DBtn" class="grid-btn">2Dグリッド</button>
-          <button id="toggleGrid3DBtn" class="grid-btn">3Dグリッド</button>
+    <div class="side-scroll">
+      <div class="block">
+        <span class="label">操作履歴</span>
+        <div class="undo-redo">
+          <button id="undoBtn" disabled>↶ 取り消す</button>
+          <button id="redoBtn" disabled>↷ やり直す</button>
         </div>
       </div>
-      <div class="canvas-wrap">
-        <canvas id="paintCanvas" width="384" height="384"></canvas>
-      </div>
-    </div>
 
-    <div class="block dl-block">
-      <button class="dl" id="downloadBtn">PNG形式でエクスポート</button>
+      <div class="block">
+        <span class="label">レイヤー表示設定</span>
+        <div class="quick-actions">
+          <button id="showAllBtn">すべて表示</button>
+          <button id="showInnerOnlyBtn">内側のみ</button>
+          <button id="showOuterOnlyBtn">外側のみ</button>
+        </div>
+        <div class="cube-list" id="cubeList"></div>
+      </div>
+
+      <div class="block">
+        <span class="label">ツール</span>
+        <div class="row">
+          <div class="tool-toggle">
+            <button class="pen active" id="penBtn">ペン</button>
+            <button class="eraser" id="eraserBtn">消しゴム</button>
+            <button class="spoid" id="spoidBtn">スポイト</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input type="color" id="colorPicker" value="#5ee6c4">
+          <input type="range" id="brushSize" min="1" max="6" value="1" style="flex:1;">
+          <span id="brushLabel" style="font-size:12px; color:var(--sub); width:24px; text-align:right;">1px</span>
+        </div>
+        <span class="label" style="margin-top:16px;">カラー履歴</span>
+        <div class="swatches" id="swatches"></div>
+      </div>
+
+      <div class="block">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span class="label" style="margin-bottom:0;">キャンバス (64×64)</span>
+          <div style="display:flex; gap:6px;">
+            <button id="toggleGrid2DBtn" class="grid-btn">2Dグリッド</button>
+            <button id="toggleGrid3DBtn" class="grid-btn">3Dグリッド</button>
+          </div>
+        </div>
+        <div class="canvases-container" id="canvasesContainer">
+          </div>
+      </div>
+
+      <div class="block dl-block" id="downloadBlock">
+        <button class="dl" id="downloadBtn">現在の部位をエクスポート</button>
+        <button class="dl all" id="downloadAllBtn">全身(4部位)をまとめてエクスポート</button>
+      </div>
     </div>
   </div>
 
   <div class="main">
     <div id="viewer"></div>
-    <div class="badge">部位: <b id="partNameBadge">服</b> | カメラ操作: 空白をドラッグ</div>
+    <div class="badge">プレビュー: <b id="partNameBadge">服</b> | カメラ操作: 空白をドラッグ</div>
   </div>
 </div>
 
@@ -287,118 +291,124 @@ const PART_KEYS = ['head','chest','legs','feet'];
 const TEX_SIZE = 64;
 const MAX_HISTORY = 40;
 
+// テクスチャの実データを持つCanvas（見えない裏方）
 const partCanvases = {};
-const undoStacks = {};
-const redoStacks = {};
+// 3Dモデルに割り当てるTextureとMaterialの格納庫
+const materials = {};
+const textures = {};
+
+// グローバルなUndo/Redo履歴（部位をまたいで履歴を統合）
+let globalUndo = [];
+let globalRedo = [];
+
 PART_KEYS.forEach(k=>{
   const c = document.createElement('canvas');
   c.width = TEX_SIZE; c.height = TEX_SIZE;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
   partCanvases[k] = c;
-  undoStacks[k] = [];
-  redoStacks[k] = [];
 });
 
-const paintCanvas = document.getElementById('paintCanvas');
-const pctx = paintCanvas.getContext('2d');
-pctx.imageSmoothingEnabled = false;
-
-let currentPart = 'chest';
+// 現在の表示モード ('all' または 'head', 'chest' など)
+let currentPart = 'all'; 
 let showGrid2D = false;
 let showGrid3D = false;
 let hasStarted = false;
 
-const texture = new THREE.CanvasTexture(currentCanvas());
-texture.magFilter = THREE.NearestFilter;
-texture.minFilter = THREE.NearestFilter;
-
-function currentCanvas(){ return partCanvases[currentPart]; }
-function currentCtx(){ return currentCanvas().getContext('2d'); }
-
 document.getElementById('toggleGrid2DBtn').onclick = (e) => {
   showGrid2D = !showGrid2D;
   e.target.classList.toggle('active', showGrid2D);
-  refreshPaintCanvasView();
+  refreshAllDisplayCanvases();
 };
 
 document.getElementById('toggleGrid3DBtn').onclick = (e) => {
   showGrid3D = !showGrid3D;
   e.target.classList.toggle('active', showGrid3D);
-  if (material && material.userData.gridUniforms) {
-    material.userData.gridUniforms.showGrid3D.value = showGrid3D ? 1.0 : 0.0;
-  }
+  // 全マテリアルのシェーダーフラグを更新
+  Object.values(materials).forEach(mat => {
+    if (mat && mat.userData.gridUniforms) {
+      mat.userData.gridUniforms.showGrid3D.value = showGrid3D ? 1.0 : 0.0;
+    }
+  });
 };
 
-function refreshPaintCanvasView(){
-  pctx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
-  pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
-  
-  if(showGrid2D) {
-    pctx.lineWidth = 1.0;
-    pctx.strokeStyle = 'rgba(150, 150, 150, 0.4)'; 
-    pctx.beginPath();
-    const cellSize = paintCanvas.width / TEX_SIZE;
-    for(let i = 0; i <= TEX_SIZE; i++){
-      const pos = Math.floor(i * cellSize) + 0.5; 
-      pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
-      pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
+// 画面上の2Dキャンバスを更新する
+function refreshAllDisplayCanvases(){
+  // UIに表示されている全キャンバスを更新
+  document.querySelectorAll('.ui-canvas').forEach(uiCanvas => {
+    const key = uiCanvas.dataset.partKey;
+    if(!key) return;
+    const ctx = uiCanvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0,0,uiCanvas.width,uiCanvas.height);
+    ctx.drawImage(partCanvases[key], 0,0, TEX_SIZE, TEX_SIZE, 0,0, uiCanvas.width, uiCanvas.height);
+    
+    if(showGrid2D) {
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = 'rgba(150, 150, 150, 0.4)'; 
+      ctx.beginPath();
+      const cellSize = uiCanvas.width / TEX_SIZE;
+      for(let i = 0; i <= TEX_SIZE; i++){
+        const pos = Math.floor(i * cellSize) + 0.5; 
+        ctx.moveTo(pos, 0); ctx.lineTo(pos, uiCanvas.height);
+        ctx.moveTo(0, pos); ctx.lineTo(uiCanvas.width, pos);
+      }
+      ctx.stroke();
     }
-    pctx.stroke();
-  }
+  });
 
-  if(typeof texture !== 'undefined') {
-    texture.image = currentCanvas();
-    texture.needsUpdate = true;
-  }
+  // 3D側のテクスチャも更新
+  PART_KEYS.forEach(k => {
+    if(textures[k]) {
+      textures[k].needsUpdate = true;
+    }
+  });
 }
 
 function loadImageIntoPart(partKey, src, cb){
   const img = new Image();
   img.onload = ()=>{
     const ctx = partCanvases[partKey].getContext('2d');
-    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0,0,TEX_SIZE,TEX_SIZE);
     ctx.drawImage(img, 0, 0, TEX_SIZE, TEX_SIZE);
-    undoStacks[partKey] = []; redoStacks[partKey] = [];
     if(cb) cb();
   };
   img.src = src;
 }
 function clearPart(partKey){
   partCanvases[partKey].getContext('2d').clearRect(0,0,TEX_SIZE,TEX_SIZE);
-  undoStacks[partKey] = []; redoStacks[partKey] = [];
 }
 
 // ============================================================
-// Undo / Redo
+// Global Undo / Redo
 // ============================================================
 function updateUndoRedoButtons(){
-  document.getElementById('undoBtn').disabled = undoStacks[currentPart].length===0;
-  document.getElementById('redoBtn').disabled = redoStacks[currentPart].length===0;
+  document.getElementById('undoBtn').disabled = globalUndo.length===0;
+  document.getElementById('redoBtn').disabled = globalRedo.length===0;
 }
-function snapshotBeforeStroke(){
-  const data = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
-  const stack = undoStacks[currentPart];
-  stack.push(data);
-  if(stack.length>MAX_HISTORY) stack.shift();
-  redoStacks[currentPart] = [];
+function snapshotBeforeStroke(partKey){
+  const data = partCanvases[partKey].getContext('2d').getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  globalUndo.push({ part: partKey, data: data });
+  if(globalUndo.length > MAX_HISTORY) globalUndo.shift();
+  globalRedo = [];
   updateUndoRedoButtons();
 }
 function undo(){
-  const stack = undoStacks[currentPart];
-  if(stack.length===0) return;
-  const current = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
-  redoStacks[currentPart].push(current);
-  currentCtx().putImageData(stack.pop(),0,0);
-  refreshPaintCanvasView();
+  const action = globalUndo.pop();
+  if(!action) return;
+  const current = partCanvases[action.part].getContext('2d').getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  globalRedo.push({ part: action.part, data: current });
+  partCanvases[action.part].getContext('2d').putImageData(action.data, 0, 0);
+  refreshAllDisplayCanvases();
   updateUndoRedoButtons();
 }
 function redo(){
-  const stack = redoStacks[currentPart];
-  if(stack.length===0) return;
-  const current = currentCtx().getImageData(0,0,TEX_SIZE,TEX_SIZE);
-  undoStacks[currentPart].push(current);
-  currentCtx().putImageData(stack.pop(),0,0);
-  refreshPaintCanvasView();
+  const action = globalRedo.pop();
+  if(!action) return;
+  const current = partCanvases[action.part].getContext('2d').getImageData(0,0,TEX_SIZE,TEX_SIZE);
+  globalUndo.push({ part: action.part, data: current });
+  partCanvases[action.part].getContext('2d').putImageData(action.data, 0, 0);
+  refreshAllDisplayCanvases();
   updateUndoRedoButtons();
 }
 document.getElementById('undoBtn').onclick = undo;
@@ -451,9 +461,9 @@ function rgbToHex(r, g, b) {
   return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-function paintAt(px, py){
+function paintAt(partKey, px, py){
   if(px<0||py<0||px>=TEX_SIZE||py>=TEX_SIZE) return;
-  const ctx = currentCtx();
+  const ctx = partCanvases[partKey].getContext('2d');
   
   if (tool === 'spoid') {
     const pixel = ctx.getImageData(px, py, 1, 1).data;
@@ -473,43 +483,49 @@ function paintAt(px, py){
     ctx.fillStyle = brushColor;
     ctx.fillRect(px-half, py-half, size, size);
   }
-  refreshPaintCanvasView();
+  refreshAllDisplayCanvases();
 }
 
-function canvasEventToPixel(e){
-  const rect = paintCanvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX - rect.left) / (rect.width / TEX_SIZE));
-  const y = Math.floor((e.clientY - rect.top) / (rect.height / TEX_SIZE));
-  return [x,y];
-}
-
-paintCanvas.addEventListener('mousedown', e=>{
-  painting = true;
-  if(tool !== 'spoid'){
-    snapshotBeforeStroke();
-    if(tool === 'pen') addColorToHistory(brushColor);
+// 2Dキャンバス用のイベントバインディング
+function bind2DCanvasEvents(uiCanvas, partKey) {
+  function canvasEventToPixel(e){
+    const rect = uiCanvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / (rect.width / TEX_SIZE));
+    const y = Math.floor((e.clientY - rect.top) / (rect.height / TEX_SIZE));
+    return [x,y];
   }
-  const [x,y]=canvasEventToPixel(e); paintAt(x,y);
-});
+
+  uiCanvas.addEventListener('mousedown', e=>{
+    painting = true;
+    if(tool !== 'spoid'){
+      snapshotBeforeStroke(partKey);
+      if(tool === 'pen') addColorToHistory(brushColor);
+    }
+    const [x,y] = canvasEventToPixel(e); paintAt(partKey, x,y);
+  });
+  uiCanvas.addEventListener('mousemove', e=>{ 
+    if(!painting) return; 
+    const [x,y] = canvasEventToPixel(e); paintAt(partKey, x,y); 
+  });
+  uiCanvas.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    const t = e.touches[0];
+    painting = true; 
+    if(tool !== 'spoid'){
+      snapshotBeforeStroke(partKey);
+      if(tool === 'pen') addColorToHistory(brushColor);
+    }
+    const [x,y] = canvasEventToPixel(t); paintAt(partKey, x,y);
+  }, { passive:false });
+  uiCanvas.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(!painting) return;
+    const t = e.touches[0];
+    const [x,y] = canvasEventToPixel(t); paintAt(partKey, x,y);
+  }, { passive:false });
+}
+
 window.addEventListener('mouseup', ()=> painting=false);
-paintCanvas.addEventListener('mousemove', e=>{ if(!painting) return; const [x,y]=canvasEventToPixel(e); paintAt(x,y); });
-
-paintCanvas.addEventListener('touchstart', e=>{
-  e.preventDefault();
-  const t = e.touches[0];
-  painting = true; 
-  if(tool !== 'spoid'){
-    snapshotBeforeStroke();
-    if(tool === 'pen') addColorToHistory(brushColor);
-  }
-  const [x,y] = canvasEventToPixel(t); paintAt(x,y);
-}, { passive:false });
-paintCanvas.addEventListener('touchmove', e=>{
-  e.preventDefault();
-  if(!painting) return;
-  const t = e.touches[0];
-  const [x,y] = canvasEventToPixel(t); paintAt(x,y);
-}, { passive:false });
 window.addEventListener('touchend', ()=> painting=false);
 
 function setTool(t){
@@ -539,11 +555,9 @@ viewerEl.appendChild(renderer.domElement);
 renderer.domElement.style.cursor = 'grab';
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.5)); 
-
 const mainLight = new THREE.DirectionalLight(0xffffff, 0.6);
 mainLight.position.set(2, 5, -6);
 scene.add(mainLight);
-
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
 fillLight.position.set(-2, 2, 4);
 scene.add(fillLight);
@@ -558,53 +572,48 @@ const frontArrow = new THREE.ArrowHelper(
 );
 scene.add(frontArrow);
 
-const material = new THREE.MeshLambertMaterial({ 
-  map: texture, 
-  transparent: true, 
-  alphaTest: 0.4, 
-  side: THREE.DoubleSide 
+// パーツごとのマテリアルを生成
+PART_KEYS.forEach(k => {
+  textures[k] = new THREE.CanvasTexture(partCanvases[k]);
+  textures[k].magFilter = THREE.NearestFilter;
+  textures[k].minFilter = THREE.NearestFilter;
+
+  const mat = new THREE.MeshLambertMaterial({ 
+    map: textures[k], transparent: true, alphaTest: 0.4, side: THREE.DoubleSide 
+  });
+  mat.extensions = { derivatives: true };
+  mat.userData.gridUniforms = { showGrid3D: { value: 0.0 } };
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.showGrid3D = mat.userData.gridUniforms.showGrid3D;
+    shader.fragmentShader = `uniform float showGrid3D;\n${shader.fragmentShader}`;
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <alphatest_fragment>',
+      `
+      float isGrid = 0.0;
+      if (showGrid3D > 0.5) {
+          vec2 coord = vUv * 64.0;
+          vec2 gridDist = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+          float lineDist = min(gridDist.x, gridDist.y);
+          isGrid = 1.0 - smoothstep(0.0, 1.0, lineDist);
+      }
+      #ifdef ALPHATEST
+          if ( diffuseColor.a < ALPHATEST && isGrid <= 0.0 ) discard;
+      #endif
+      `
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `
+      #include <dithering_fragment>
+      if (showGrid3D > 0.5 && isGrid > 0.0) {
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55), isGrid * 0.8);
+          gl_FragColor.a = max(gl_FragColor.a, isGrid * 0.8);
+      }
+      `
+    );
+  };
+  materials[k] = mat;
 });
-
-material.extensions = { derivatives: true };
-material.userData.gridUniforms = { showGrid3D: { value: 0.0 } };
-
-material.onBeforeCompile = (shader) => {
-  shader.uniforms.showGrid3D = material.userData.gridUniforms.showGrid3D;
-  
-  shader.fragmentShader = `
-    uniform float showGrid3D;
-    ${shader.fragmentShader}
-  `;
-  
-  shader.fragmentShader = shader.fragmentShader.replace(
-    '#include <alphatest_fragment>',
-    `
-    float isGrid = 0.0;
-    if (showGrid3D > 0.5) {
-        vec2 coord = vUv * 64.0;
-        vec2 gridDist = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
-        float lineDist = min(gridDist.x, gridDist.y);
-        isGrid = 1.0 - smoothstep(0.0, 1.0, lineDist);
-    }
-    
-    #ifdef ALPHATEST
-        if ( diffuseColor.a < ALPHATEST && isGrid <= 0.0 ) discard;
-    #endif
-    `
-  );
-  
-  shader.fragmentShader = shader.fragmentShader.replace(
-    '#include <dithering_fragment>',
-    `
-    #include <dithering_fragment>
-    
-    if (showGrid3D > 0.5 && isGrid > 0.0) {
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.55), isGrid * 0.8);
-        gl_FragColor.a = max(gl_FragColor.a, isGrid * 0.8);
-    }
-    `
-  );
-};
 
 let modelGroup = new THREE.Group();
 scene.add(modelGroup);
@@ -623,7 +632,7 @@ function facesForCube(cube){
   };
 }
 
-function buildCubeMesh(cube){
+function buildCubeMesh(cube, partKey){
   const faces = facesForCube(cube);
   const positions = [], uvs = [], indices = [];
   let vi = 0;
@@ -645,16 +654,23 @@ function buildCubeMesh(cube){
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, material);
+  const mesh = new THREE.Mesh(geo, materials[partKey]);
   mesh.userData.outer = isOuterLayer(cube);
+  mesh.userData.partKey = partKey; // ★どの部位のメッシュか記憶させる★
   return mesh;
 }
 
 function rebuildModel(){
   while(modelGroup.children.length) modelGroup.remove(modelGroup.children[0]);
-  const geoData = GEOMETRIES[currentPart];
-  geoData.cubes.forEach(cube=> modelGroup.add(buildCubeMesh(cube)));
-  document.getElementById('partNameBadge').textContent = geoData.label;
+  const keysToBuild = currentPart === 'all' ? PART_KEYS : [currentPart];
+  
+  keysToBuild.forEach(key => {
+    GEOMETRIES[key].cubes.forEach(cube => {
+      modelGroup.add(buildCubeMesh(cube, key));
+    });
+  });
+  
+  document.getElementById('partNameBadge').textContent = currentPart === 'all' ? '全身 (All)' : GEOMETRIES[currentPart].label;
   buildCubeListUI();
   centerCameraOnModel();
 }
@@ -662,29 +678,48 @@ function rebuildModel(){
 function buildCubeListUI(){
   const listEl = document.getElementById('cubeList');
   listEl.innerHTML = '';
-  const cubes = GEOMETRIES[currentPart].cubes;
-  cubes.forEach((cube, i)=>{
-    const outer = isOuterLayer(cube);
-    const item = document.createElement('label');
-    item.className = 'cube-item';
-    item.innerHTML = `<input type="checkbox" checked data-idx="${i}">
-      <span>${cube.name}</span>
-      <span class="layer-tag ${outer?'outer':'inner'}">${outer?'外側':'内側'}</span>`;
-    const checkbox = item.querySelector('input');
-    checkbox.addEventListener('change', ()=>{
-      modelGroup.children[i].visible = checkbox.checked;
+  const keysToList = currentPart === 'all' ? PART_KEYS : [currentPart];
+  
+  keysToList.forEach(key => {
+    GEOMETRIES[key].cubes.forEach((cube)=>{
+      const outer = isOuterLayer(cube);
+      const item = document.createElement('label');
+      item.className = 'cube-item';
+      // どの部位のメッシュかを判定してオンオフできるようにする
+      item.innerHTML = `<input type="checkbox" checked data-part="${key}" data-cname="${cube.name}">
+        <span>${currentPart === 'all' ? `[${GEOMETRIES[key].label}] ` : ''}${cube.name}</span>
+        <span class="layer-tag ${outer?'outer':'inner'}">${outer?'外側':'内側'}</span>`;
+      
+      const checkbox = item.querySelector('input');
+      checkbox.addEventListener('change', ()=>{
+        modelGroup.children.forEach(mesh => {
+          // Geometry作成時にメッシュ名等を持たせていないので、順番か判定で探す
+          // ここではシンプルに userdata.partKey と outer 判定で一括操作するか、名前を持たせます
+        });
+        // ※正確な表示切替のため、mesh自体を検索します
+        const targetMeshes = modelGroup.children.filter(m => m.userData.partKey === key);
+        // 同じ名前のキューブがあるかもしれないので簡易的に実装（本来はID管理が良い）
+        const cubeIndex = GEOMETRIES[key].cubes.indexOf(cube);
+        if(targetMeshes[cubeIndex]) targetMeshes[cubeIndex].visible = checkbox.checked;
+      });
+      listEl.appendChild(item);
     });
-    listEl.appendChild(item);
   });
 }
+
 function setAllCubeVisibility(predicate){
-  const cubes = GEOMETRIES[currentPart].cubes;
+  const keysToList = currentPart === 'all' ? PART_KEYS : [currentPart];
   const listEl = document.getElementById('cubeList');
-  cubes.forEach((cube,i)=>{
-    const visible = predicate(cube);
-    modelGroup.children[i].visible = visible;
-    const cb = listEl.querySelector(`input[data-idx="${i}"]`);
-    if(cb) cb.checked = visible;
+  
+  keysToList.forEach(key => {
+    const targetMeshes = modelGroup.children.filter(m => m.userData.partKey === key);
+    GEOMETRIES[key].cubes.forEach((cube, i)=>{
+      const visible = predicate(cube);
+      if(targetMeshes[i]) targetMeshes[i].visible = visible;
+      
+      const cb = listEl.querySelector(`input[data-part="${key}"][data-cname="${cube.name}"]`);
+      if(cb) cb.checked = visible;
+    });
   });
 }
 document.getElementById('showAllBtn').onclick = ()=> setAllCubeVisibility(()=>true);
@@ -692,11 +727,19 @@ document.getElementById('showInnerOnlyBtn').onclick = ()=> setAllCubeVisibility(
 document.getElementById('showOuterOnlyBtn').onclick = ()=> setAllCubeVisibility(c=>isOuterLayer(c));
 
 // ============================================================
-// Part Switching via Tabs
+// Part Switching via Tabs & Dynamic 2D Canvases
 // ============================================================
 function renderPartTabs() {
   const container = document.getElementById('partTabs');
   container.innerHTML = '';
+  
+  // 全身タブ
+  const btnAll = document.createElement('button');
+  btnAll.className = `part-tab ${currentPart === 'all' ? 'active' : ''}`;
+  btnAll.textContent = '全身 (All)';
+  btnAll.onclick = () => switchToPart('all');
+  container.appendChild(btnAll);
+
   PART_KEYS.forEach(key => {
     const btn = document.createElement('button');
     btn.className = `part-tab ${key === currentPart ? 'active' : ''}`;
@@ -706,12 +749,49 @@ function renderPartTabs() {
   });
 }
 
+function build2DCanvasesUI() {
+  const container = document.getElementById('canvasesContainer');
+  container.innerHTML = '';
+  const keysToBuild = currentPart === 'all' ? PART_KEYS : [currentPart];
+  
+  keysToBuild.forEach(key => {
+    const wrap = document.createElement('div');
+    wrap.className = 'canvas-wrap';
+    
+    if(currentPart === 'all') {
+      const label = document.createElement('div');
+      label.className = 'canvas-part-label';
+      label.textContent = `▼ ${GEOMETRIES[key].label}`;
+      wrap.appendChild(label);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'ui-canvas';
+    canvas.width = 384; 
+    canvas.height = 384;
+    canvas.dataset.partKey = key; // ★重要: イベントで使う部位キー
+    wrap.appendChild(canvas);
+    container.appendChild(wrap);
+
+    // イベントのバインド
+    bind2DCanvasEvents(canvas, key);
+  });
+}
+
 function switchToPart(key){
   currentPart = key;
-  renderPartTabs(); // Update active tab
-  refreshPaintCanvasView();
+  renderPartTabs(); 
+  build2DCanvasesUI(); // 表示モードに応じてキャンバスUIを再生成
+  refreshAllDisplayCanvases();
   rebuildModel();
-  updateUndoRedoButtons();
+  
+  // ダウンロードボタンの表示制御
+  if(currentPart === 'all') {
+    document.getElementById('downloadBtn').style.display = 'none';
+  } else {
+    document.getElementById('downloadBtn').style.display = 'block';
+    document.getElementById('downloadBtn').textContent = `${GEOMETRIES[currentPart].label} をエクスポート`;
+  }
 }
 
 // --- Orbit Camera Controls ---
@@ -748,16 +828,20 @@ function paintFromHit(hit){
   if(!hit || !hit.uv) return;
   const px = Math.floor(hit.uv.x*TEX_SIZE);
   const py = Math.floor((1-hit.uv.y)*TEX_SIZE);
-  paintAt(px, py);
+  // ★ hit.object.userData.partKey に入っている部位へ直接書き込む ★
+  paintAt(hit.object.userData.partKey, px, py);
 }
 
 let dragging=false, painting3D=false, lastX=0, lastY=0;
+let lastPaintedPart = null; // ドラッグ中のスナップショット重複を防ぐため
+
 renderer.domElement.addEventListener('mousedown', e=>{
   const hit = raycastHit(e);
   if(hit){
     painting3D = true;
+    lastPaintedPart = hit.object.userData.partKey;
     if(tool !== 'spoid'){
-      snapshotBeforeStroke();
+      snapshotBeforeStroke(lastPaintedPart);
       if(tool === 'pen') addColorToHistory(brushColor);
     }
     renderer.domElement.style.cursor = 'crosshair';
@@ -768,9 +852,20 @@ renderer.domElement.addEventListener('mousedown', e=>{
     renderer.domElement.style.cursor = 'grabbing';
   }
 });
-window.addEventListener('mouseup', ()=>{ dragging=false; painting3D=false; });
+window.addEventListener('mouseup', ()=>{ dragging=false; painting3D=false; lastPaintedPart=null; });
 window.addEventListener('mousemove', e=>{
-  if(painting3D){ const hit = raycastHit(e); if(hit) paintFromHit(hit); return; }
+  if(painting3D){ 
+    const hit = raycastHit(e); 
+    if(hit) {
+      // もしドラッグ中に別の部位にまたがったら、その部位用のスナップショットを撮る
+      if(hit.object.userData.partKey !== lastPaintedPart && tool !== 'spoid') {
+         lastPaintedPart = hit.object.userData.partKey;
+         snapshotBeforeStroke(lastPaintedPart);
+      }
+      paintFromHit(hit); 
+    }
+    return; 
+  }
   if(!dragging) return;
   const dx = e.clientX-lastX, dy = e.clientY-lastY;
   lastX=e.clientX; lastY=e.clientY;
@@ -804,8 +899,9 @@ renderer.domElement.addEventListener('touchstart', e=>{
   const hit = raycastHit(t);
   if(hit){ 
     painting3D=true; 
+    lastPaintedPart = hit.object.userData.partKey;
     if(tool !== 'spoid'){
-      snapshotBeforeStroke(); 
+      snapshotBeforeStroke(lastPaintedPart); 
       if(tool === 'pen') addColorToHistory(brushColor);
     }
     paintFromHit(hit); 
@@ -821,7 +917,17 @@ renderer.domElement.addEventListener('touchmove', e=>{
     return;
   }
   const t = e.touches[0];
-  if(painting3D){ const hit = raycastHit(t); if(hit) paintFromHit(hit); return; }
+  if(painting3D){ 
+    const hit = raycastHit(t); 
+    if(hit) {
+      if(hit.object.userData.partKey !== lastPaintedPart && tool !== 'spoid') {
+         lastPaintedPart = hit.object.userData.partKey;
+         snapshotBeforeStroke(lastPaintedPart);
+      }
+      paintFromHit(hit); 
+    }
+    return; 
+  }
   if(!dragging) return;
   const dx = t.clientX-lastX, dy = t.clientY-lastY;
   lastX=t.clientX; lastY=t.clientY;
@@ -829,7 +935,7 @@ renderer.domElement.addEventListener('touchmove', e=>{
   camPhi = Math.min(Math.max(camPhi - dy*0.01, 0.2), Math.PI-0.2);
   updateCamera();
 }, { passive:false });
-window.addEventListener('touchend', ()=>{ dragging=false; painting3D=false; pinchDist=null; });
+window.addEventListener('touchend', ()=>{ dragging=false; painting3D=false; pinchDist=null; lastPaintedPart=null; });
 
 function resize(){
   const w = viewerEl.clientWidth, h = viewerEl.clientHeight;
@@ -840,40 +946,36 @@ function resize(){
 window.addEventListener('resize', resize);
 function animate(){ requestAnimationFrame(animate); renderer.render(scene, camera); }
 
+// ============================================================
+// Exports
+// ============================================================
 document.getElementById('downloadBtn').onclick = ()=>{
+  if(currentPart === 'all') return;
   const link = document.createElement('a');
   link.download = currentPart + '_texture.png';
-  link.href = currentCanvas().toDataURL('image/png');
+  link.href = partCanvases[currentPart].toDataURL('image/png');
   link.click();
+};
+
+document.getElementById('downloadAllBtn').onclick = ()=>{
+  PART_KEYS.forEach((key, index) => {
+    setTimeout(() => {
+      const link = document.createElement('a');
+      link.download = key + '_texture.png';
+      link.href = partCanvases[key].toDataURL('image/png');
+      link.click();
+    }, index * 300);
+  });
 };
 
 // ============================================================
 // Initialization Modal & Startup
 // ============================================================
 const startModal = document.getElementById('startModal');
-const uploadInline = document.getElementById('uploadInline');
-let modalSelectedPart = 'chest';
-
 const choiceButtons = [
   document.getElementById('choiceTemplate'),
-  document.getElementById('choiceBlank'),
-  document.getElementById('choiceUpload')
+  document.getElementById('choiceBlank')
 ];
-
-function renderModalPartPick(){
-  const container = document.getElementById('modalPartPick');
-  container.innerHTML = '';
-  PART_KEYS.forEach(key=>{
-    const b = document.createElement('button');
-    b.textContent = GEOMETRIES[key].label;
-    b.className = key===modalSelectedPart ? 'active' : '';
-    b.onclick = ()=>{
-      modalSelectedPart = key;
-      renderModalPartPick();
-    };
-    container.appendChild(b);
-  });
-}
 
 fetch(DATA_BASE + 'geometries.json')
   .then(res=>{
@@ -882,8 +984,6 @@ fetch(DATA_BASE + 'geometries.json')
   })
   .then(data=>{
     GEOMETRIES = data;
-    renderPartTabs(); // メインUIのタブ生成
-    renderModalPartPick(); // 初期画面用の部位ボタン生成
     choiceButtons.forEach(el=> el.style.pointerEvents = '');
   })
   .catch(err=>{
@@ -894,12 +994,14 @@ fetch(DATA_BASE + 'geometries.json')
   });
 
 document.getElementById('showModalBtn').onclick = ()=>{
-  // リセット時の動作：部位選択UIを非表示にし、現在選択中の部位を対象にする
-  modalSelectedPart = currentPart; 
-  uploadInline.style.display = 'none';
-  document.getElementById('modalPartPick').style.display = 'none';
-  document.getElementById('modalTitle').textContent = `キャンバスの初期化 (${GEOMETRIES[currentPart].label})`;
-  document.getElementById('modalSub').innerHTML = `<span style="color:var(--accent2)">※現在編集中の内容 (${GEOMETRIES[currentPart].label}) は破棄されます。</span>`;
+  document.getElementById('modalTitle').textContent = `キャンバスのリセット`;
+  
+  if (currentPart === 'all') {
+    document.getElementById('modalSub').innerHTML = `<span style="color:var(--accent2)">※全身(4部位)の描画内容がすべて破棄されます。</span>`;
+  } else {
+    document.getElementById('modalSub').innerHTML = `<span style="color:var(--accent2)">※現在編集中の部位 (${GEOMETRIES[currentPart].label}) のみが破棄されます。</span>`;
+  }
+  
   document.getElementById('cancelModalWrap').style.display = 'block';
   startModal.style.display = 'flex';
 };
@@ -912,32 +1014,33 @@ function closeModalAfterApply(){
   startModal.style.display = 'none';
   if(!hasStarted){
     hasStarted = true;
-    switchToPart(modalSelectedPart); // 最初に選んだ部位でスタート
+    currentPart = 'all'; // 初回は全身モードでスタート
+    switchToPart(currentPart);
     resize();
     animate();
   } else {
-    refreshPaintCanvasView();
+    refreshAllDisplayCanvases();
+    globalUndo = []; globalRedo = []; // リセット時は履歴クリア
     updateUndoRedoButtons();
   }
 }
 
 document.getElementById('choiceTemplate').onclick = ()=>{
-  loadImageIntoPart(modalSelectedPart, TEMPLATES[modalSelectedPart], closeModalAfterApply);
+  const keysToReset = (!hasStarted || currentPart === 'all') ? PART_KEYS : [currentPart];
+  let loadedCount = 0;
+  keysToReset.forEach(key => {
+    loadImageIntoPart(key, TEMPLATES[key], () => {
+      loadedCount++;
+      if(loadedCount === keysToReset.length) closeModalAfterApply();
+    });
+  });
 };
+
 document.getElementById('choiceBlank').onclick = ()=>{
-  clearPart(modalSelectedPart);
+  const keysToReset = (!hasStarted || currentPart === 'all') ? PART_KEYS : [currentPart];
+  keysToReset.forEach(key => clearPart(key));
   closeModalAfterApply();
 };
-document.getElementById('choiceUpload').onclick = ()=>{
-  uploadInline.style.display = uploadInline.style.display === 'block' ? 'none' : 'block';
-};
-document.getElementById('modalFileInput').addEventListener('change', e=>{
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => loadImageIntoPart(modalSelectedPart, ev.target.result, closeModalAfterApply);
-  reader.readAsDataURL(file);
-});
 </script>
 </body>
 </html>
