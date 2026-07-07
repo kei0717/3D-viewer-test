@@ -132,11 +132,12 @@
   #uploadInline{ display:none; margin-top:8px; padding:12px; background:var(--panel2); border:1px dashed var(--line); border-radius:8px; }
   #uploadInline input{ width:100%; font-size:12px; color:var(--sub); }
 
-  #toggleGridBtn{
+  .grid-btn{
     background:var(--panel2); border:1px solid var(--line); color:var(--text); 
     padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;
   }
-  #toggleGridBtn:hover{ border-color:var(--accent); }
+  .grid-btn:hover{ border-color:var(--accent); }
+  .grid-btn.active{ border-color:var(--accent); color:var(--accent); }
 
   /* ---- モバイル対応 ---- */
   @media (max-width: 880px){
@@ -233,7 +234,10 @@
     <div class="block">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <span class="label" style="margin-bottom:0;">UVテンプレート (64×64)</span>
-        <button id="toggleGridBtn">グリッド: OFF</button>
+        <div style="display:flex; gap:6px;">
+          <button id="toggleGrid2DBtn" class="grid-btn">2Dグリッド: OFF</button>
+          <button id="toggleGrid3DBtn" class="grid-btn">3Dグリッド: OFF</button>
+        </div>
       </div>
       <div class="canvas-wrap">
         <canvas id="paintCanvas" width="384" height="384"></canvas>
@@ -291,41 +295,83 @@ const pctx = paintCanvas.getContext('2d');
 pctx.imageSmoothingEnabled = false;
 
 let currentPart = 'chest';
-let showGrid = false;
+let showGrid2D = false;
+let showGrid3D = false;
+
+// ============================================================
+// 3D用の合成テクスチャキャンバス設定
+// 64x64のテクスチャをそのまま使わず、512x512に拡大してグリッドを描画できるようにします
+// ============================================================
+const tex3DCanvas = document.createElement('canvas');
+tex3DCanvas.width = 512; 
+tex3DCanvas.height = 512;
+const tex3DCtx = tex3DCanvas.getContext('2d');
+tex3DCtx.imageSmoothingEnabled = false;
+
+// 3D用グリッドパターン（1回だけ描画してキャッシュしておく）
+const gridPatternCanvas = document.createElement('canvas');
+gridPatternCanvas.width = 512; 
+gridPatternCanvas.height = 512;
+const gpCtx = gridPatternCanvas.getContext('2d');
+gpCtx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+gpCtx.lineWidth = 1;
+gpCtx.beginPath();
+// 512pxの中に64マス作るため、1マスは8px
+for(let i = 0; i <= 512; i += 8){
+    gpCtx.moveTo(i, 0); gpCtx.lineTo(i, 512);
+    gpCtx.moveTo(0, i); gpCtx.lineTo(512, i);
+}
+gpCtx.stroke();
+
+// Three.js側のテクスチャとして割り当てる
+const texture = new THREE.CanvasTexture(tex3DCanvas);
+texture.magFilter = THREE.NearestFilter;
+texture.minFilter = THREE.NearestFilter;
 
 function currentCanvas(){ return partCanvases[currentPart]; }
 function currentCtx(){ return currentCanvas().getContext('2d'); }
 
-document.getElementById('toggleGridBtn').onclick = (e) => {
-  showGrid = !showGrid;
-  e.target.textContent = `グリッド: ${showGrid ? 'ON' : 'OFF'}`;
-  e.target.style.borderColor = showGrid ? 'var(--accent)' : 'var(--line)';
-  e.target.style.color = showGrid ? 'var(--accent)' : 'var(--text)';
+document.getElementById('toggleGrid2DBtn').onclick = (e) => {
+  showGrid2D = !showGrid2D;
+  e.target.textContent = `2Dグリッド: ${showGrid2D ? 'ON' : 'OFF'}`;
+  e.target.classList.toggle('active', showGrid2D);
+  refreshPaintCanvasView();
+};
+
+document.getElementById('toggleGrid3DBtn').onclick = (e) => {
+  showGrid3D = !showGrid3D;
+  e.target.textContent = `3Dグリッド: ${showGrid3D ? 'ON' : 'OFF'}`;
+  e.target.classList.toggle('active', showGrid3D);
   refreshPaintCanvasView();
 };
 
 function refreshPaintCanvasView(){
+  // --- 2Dキャンバスの更新 ---
   pctx.clearRect(0,0,paintCanvas.width,paintCanvas.height);
   pctx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, paintCanvas.width, paintCanvas.height);
   
-  // グリッドの描画
-  if(showGrid) {
+  if(showGrid2D) {
     pctx.lineWidth = 1;
-    pctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; // ピクセルの邪魔にならない薄い白
+    pctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     pctx.beginPath();
     const cellSize = paintCanvas.width / TEX_SIZE;
     for(let i = 0; i <= TEX_SIZE; i++){
       const pos = i * cellSize;
-      // 縦線
       pctx.moveTo(pos, 0); pctx.lineTo(pos, paintCanvas.height);
-      // 横線
       pctx.moveTo(0, pos); pctx.lineTo(paintCanvas.width, pos);
     }
     pctx.stroke();
   }
 
-  if(texture){
-    texture.image = currentCanvas();
+  // --- 3Dモデル用テクスチャの更新 ---
+  if(typeof texture !== 'undefined') {
+    tex3DCtx.clearRect(0,0,512,512);
+    tex3DCtx.drawImage(currentCanvas(), 0,0, TEX_SIZE, TEX_SIZE, 0,0, 512, 512);
+    
+    if(showGrid3D) {
+      tex3DCtx.drawImage(gridPatternCanvas, 0, 0);
+    }
+    
     texture.needsUpdate = true;
   }
 }
@@ -522,19 +568,16 @@ viewerEl.appendChild(renderer.domElement);
 renderer.domElement.style.cursor = 'grab';
 
 // --- ライティングの調整 ---
-scene.add(new THREE.AmbientLight(0xffffff, 0.5)); // 全体光を少し弱める
+scene.add(new THREE.AmbientLight(0xffffff, 0.5)); 
 
-// メインライト（正面から少し斜め上）※正面方向が -Z なのでZをマイナスに
 const mainLight = new THREE.DirectionalLight(0xffffff, 0.6);
 mainLight.position.set(2, 5, -6);
 scene.add(mainLight);
 
-// 補助ライト（背面と少し下から優しく照らす）
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
 fillLight.position.set(-2, 2, 4);
 scene.add(fillLight);
 
-// 正面（north = -Z方向）が分かるように、床グリッドと矢印を設置
 const grid = new THREE.GridHelper(60, 12, 0x4a5568, 0x252932);
 grid.position.y = -4;
 scene.add(grid);
@@ -562,10 +605,7 @@ const frontLabel = makeLabelSprite('正面 (N)', '#5ee6c4');
 frontLabel.position.set(0,-4,-26);
 scene.add(frontLabel);
 
-const texture = new THREE.CanvasTexture(currentCanvas());
-texture.magFilter = THREE.NearestFilter;
-texture.minFilter = THREE.NearestFilter;
-
+// ※ textureの定義部分は上部に移動しています
 const material = new THREE.MeshLambertMaterial({ map: texture, transparent:true, alphaTest:0.4, side: THREE.DoubleSide });
 
 let modelGroup = new THREE.Group();
