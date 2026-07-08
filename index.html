@@ -40,9 +40,10 @@
   .part-tab.active { background:var(--panel); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,0.3); }
   .part-tab:hover:not(.active) { color:var(--text); }
   
+  /* white-space: nowrap; を追加して1文字改行を防ぎます */
   .reset-btn{
     background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:6px 12px; border-radius:6px;
-    font-size:11px; cursor:pointer; transition:all 0.2s;
+    font-size:11px; cursor:pointer; transition:all 0.2s; white-space: nowrap;
   }
   .reset-btn:hover{ border-color:var(--accent2); color:var(--accent2); }
   
@@ -230,7 +231,7 @@
       </div>
 
       <div class="block">
-        <span class="label">ツール</span>
+        <span class="label">ツール (B:ペン / E:消しゴム / Space:スポイト)</span>
         <div class="row">
           <div class="tool-toggle">
             <button class="pen active" id="penBtn">ペン</button>
@@ -380,7 +381,7 @@ function clearPart(partKey){
 }
 
 // ============================================================
-// Global Undo / Redo
+// Global Undo / Redo & Shortcuts
 // ============================================================
 function updateUndoRedoButtons(){
   document.getElementById('undoBtn').disabled = globalUndo.length===0;
@@ -413,10 +414,28 @@ function redo(){
 }
 document.getElementById('undoBtn').onclick = undo;
 document.getElementById('redoBtn').onclick = redo;
+
+// ショートカットキーの登録 (Undo, Redo, B, E, Space)
 window.addEventListener('keydown', e=>{
-  if(!(e.ctrlKey||e.metaKey)) return;
-  if(e.key==='z' && !e.shiftKey){ e.preventDefault(); undo(); }
-  else if(e.key==='y' || (e.key==='z' && e.shiftKey)){ e.preventDefault(); redo(); }
+  // Ctrl または Cmd 押下時の処理 (Undo/Redo)
+  if(e.ctrlKey || e.metaKey){
+    if(e.key.toLowerCase()==='z' && !e.shiftKey){ e.preventDefault(); undo(); }
+    else if(e.key.toLowerCase()==='y' || (e.key.toLowerCase()==='z' && e.shiftKey)){ e.preventDefault(); redo(); }
+    return;
+  }
+  
+  // ツール切り替えショートカット
+  const k = e.key.toLowerCase();
+  if (k === 'b') {
+    e.preventDefault();
+    setTool('pen');
+  } else if (k === 'e') {
+    e.preventDefault();
+    setTool('eraser');
+  } else if (k === ' ') { // Space
+    e.preventDefault(); // Spaceによるスクロールを防止
+    setTool('spoid');
+  }
 });
 
 // ============================================================
